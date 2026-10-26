@@ -1,0 +1,13 @@
+{
+  "name": "cc-lineoa-support",
+  "private": true,
+  "workspaces": ["web", "tools/mock-receiver"],
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "dev:mock": "npm start -w tools/mock-receiver",
+    "tunnel": "node tools/tunnel.js",
+    "build": "npm run build -w web",
+    "start": "npm start -w web",
+    "test": "npm test -w web"
+  }
+}

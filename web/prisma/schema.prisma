@@ -1,0 +1,270 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  AGENT
+}
+
+enum ConversationStatus {
+  BOT
+  QUEUED
+  ASSIGNED
+  RESOLVED
+}
+
+enum Direction {
+  IN
+  OUT
+}
+
+enum SenderType {
+  CUSTOMER
+  BOT
+  AGENT
+  SYSTEM
+}
+
+enum JobStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  IN_PROGRESS
+  DONE
+  REJECTED
+  FAILED
+}
+
+enum JobPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum JobEventSource {
+  SYSTEM
+  AGENT
+  INTEGRATION
+}
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  name         String
+  /// null = Auth0-only account (no password login)
+  passwordHash String?
+  /// Auth0 user id, linked on the first Auth0 login by verified email
+  auth0Sub     String?        @unique
+  role         Role           @default(AGENT)
+  isActive     Boolean        @default(true)
+  lastSeenAt   DateTime?
+  createdAt    DateTime       @default(now())
+  assigned     Conversation[]
+  messages     Message[]
+  jobs         Job[]
+  /// LINE OAs an agent may see; admins see every OA regardless
+  channels     LineChannel[]
+}
+
+/// A LINE Official Account (Messaging API channel). Categories and integrations are shared across OAs.
+model LineChannel {
+  id            String         @id @default(uuid())
+  name          String
+  channelSecret String?
+  accessToken   String?
+  /// Filled from the bot info when an admin tests the channel
+  botUserId     String?
+  basicId       String?
+  pictureUrl    String?
+  /// Per-OA overrides of the `bot.greeting` / `bot.handoffText` settings
+  greeting      String?
+  handoffText   String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  contacts      Contact[]
+  conversations Conversation[]
+  agents        User[]
+}
+
+model Contact {
+  id            String         @id @default(uuid())
+  channelId     String
+  channel       LineChannel    @relation(fields: [channelId], references: [id])
+  /// LINE user ids are only unique within a provider, so a contact belongs to one OA
+  lineUserId    String
+  displayName   String?
+  pictureUrl    String?
+  phone         String?
+  note          String?
+  tags          String[]       @default([])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+  jobs          Job[]
+
+  @@unique([channelId, lineUserId])
+}
+
+model Conversation {
+  id              String             @id @default(uuid())
+  contactId       String
+  contact         Contact            @relation(fields: [contactId], references: [id])
+  /// Copied from the contact (which never changes OA) so lists and realtime filter without a join
+  channelId       String
+  channel         LineChannel        @relation(fields: [channelId], references: [id])
+  status          ConversationStatus @default(BOT)
+  assignedToId    String?
+  assignedTo      User?              @relation(fields: [assignedToId], references: [id])
+  categoryId      String?
+  category        Category?          @relation(fields: [categoryId], references: [id])
+  /// Bot state machine position, e.g. { step: "FORM", categoryId, fieldIndex }
+  botState        Json?
+  /// Answers collected by the bot, keyed by form field key
+  collected       Json?
+  unreadCount     Int                @default(0)
+  lastMessageText String?
+  lastMessageAt   DateTime           @default(now())
+  queuedAt        DateTime?
+  firstResponseAt DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  messages        Message[]
+  jobs            Job[]
+
+  @@index([status, lastMessageAt])
+  @@index([channelId, status, lastMessageAt])
+  @@index([contactId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      Direction
+  senderType     SenderType
+  senderUserId   String?
+  senderUser     User?        @relation(fields: [senderUserId], references: [id])
+  /// text | image | sticker | file | video | audio | location | flex | other
+  type           String
+  text           String?
+  payload        Json?
+  lineMessageId  String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Category {
+  id            String         @id @default(uuid())
+  code          String         @unique
+  name          String
+  description   String?
+  /// Array of { key, label, required }
+  form          Json           @default("[]")
+  integrationId String?
+  integration   Integration?   @relation(fields: [integrationId], references: [id])
+  /// When true the bot creates and dispatches a job itself after the customer confirms
+  autoCreateJob Boolean        @default(false)
+  sortOrder     Int            @default(0)
+  isActive      Boolean        @default(true)
+  conversations Conversation[]
+  jobs          Job[]
+}
+
+model Integration {
+  id          String     @id @default(uuid())
+  name        String
+  endpointUrl String
+  secret      String
+  /// Extra request headers, e.g. { "Authorization": "Bearer ..." }
+  headers     Json?
+  timeoutMs   Int        @default(10000)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  categories  Category[]
+  jobs        Job[]
+}
+
+model Job {
+  id             String        @id @default(uuid())
+  number         String        @unique
+  contactId      String
+  contact        Contact       @relation(fields: [contactId], references: [id])
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  categoryId     String?
+  category       Category?     @relation(fields: [categoryId], references: [id])
+  integrationId  String?
+  integration    Integration?  @relation(fields: [integrationId], references: [id])
+  title          String
+  detail         String?
+  /// Form answers / extra data forwarded to the target system
+  payload        Json          @default("{}")
+  priority       JobPriority   @default(NORMAL)
+  status         JobStatus     @default(DRAFT)
+  externalRef    String?
+  lastError      String?
+  createdById    String?
+  createdBy      User?         @relation(fields: [createdById], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  events         JobEvent[]
+
+  @@index([status, createdAt])
+  @@index([contactId])
+}
+
+model JobEvent {
+  id        String         @id @default(uuid())
+  jobId     String
+  job       Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status    JobStatus?
+  note      String?
+  source    JobEventSource
+  data      Json?
+  createdAt DateTime       @default(now())
+
+  @@index([jobId, createdAt])
+}
+
+model JobCounter {
+  period String @id
+  seq    Int
+}
+
+/// Postgres-backed work queue (LINE event processing, job dispatch, LINE push)
+model QueueTask {
+  id          String     @id @default(uuid())
+  queue       String
+  payload     Json
+  status      TaskStatus @default(PENDING)
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5)
+  runAt       DateTime   @default(now())
+  lockedAt    DateTime?
+  lastError   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([queue, status, runAt])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,7 @@
+{
+  "name": "mock-receiver",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Fake downstream system for testing job dispatch + status callbacks",
+  "scripts": { "start": "node server.js" }
+}

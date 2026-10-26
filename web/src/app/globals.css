@@ -1,0 +1,27 @@
+:root {
+  --brand: #06c755;
+  --brand-dark: #04893a;
+  --brand-soft: #e9fbf0;
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --border: #e5e7eb;
+  --text: #1f2937;
+  --text-muted: #6b7280;
+  --text-faint: #9ca3af;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+}

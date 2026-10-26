@@ -15,9 +15,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, Flex, Grid, Layout, Menu, MenuProps, Tooltip, Typography } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { createContext, ReactNode, useContext, useState } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { setDesktopUnread } from '@/lib/desktop';
 import { useRealtime } from '@/lib/realtime';
 import { Logo } from './Logo';
 import { UserAvatar } from './UserAvatar';
@@ -38,6 +39,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api<{ queue: number; mine: number }>('/api/conversations/counts'),
     refetchInterval: 30_000,
   });
+  const queue = counts.data?.queue;
+  useEffect(() => {
+    if (queue !== undefined) setDesktopUnread(queue);
+  }, [queue]);
+  // Logging out unmounts the shell: clear the taskbar badge.
+  useEffect(() => () => setDesktopUnread(0), []);
   const isAdmin = user?.role === 'ADMIN';
   const mobile = screens.md === false;
 

@@ -1,13 +1,19 @@
 {
   "name": "hotline",
   "private": true,
-  "workspaces": ["web", "tools/mock-receiver"],
+  "workspaces": [
+    "web",
+    "desktop",
+    "tools/mock-receiver"
+  ],
   "scripts": {
     "dev": "npm run dev -w web",
     "dev:mock": "npm start -w tools/mock-receiver",
     "tunnel": "node tools/tunnel.js",
     "build": "npm run build -w web",
     "start": "npm start -w web",
-    "test": "npm test -w web"
+    "test": "npm test -w web",
+    "dev:desktop": "npm run dev -w desktop",
+    "build:desktop": "npm run build -w desktop"
   }
 }

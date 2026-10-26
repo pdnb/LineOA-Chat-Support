@@ -1,0 +1,15 @@
+{
+  "name": "desktop",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Hotline desktop client (Tauri, Windows): the hosted console plus native notifications, taskbar badge and tray",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon ../web/src/app/icon.svg && node scripts/icons.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}

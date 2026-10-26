@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { getToken } from './api';
+import { desktopNotify, isDesktop } from './desktop';
 import { Message } from './types';
 
 /** Connects to the inbox socket and keeps React Query caches fresh. Returns online user ids. */
@@ -20,7 +21,9 @@ export function useRealtime(enabled: boolean) {
     socket.on('presence', setOnline);
     socket.on('message.created', (m: Message) => {
       qc.invalidateQueries({ queryKey: ['conversation', m.conversationId] });
-      if (m.direction === 'IN' && document.hidden) notify(m.text ?? 'ข้อความใหม่');
+      // The desktop app decides itself (document.hidden isn't reliable once the window is hidden to the tray).
+      if (m.direction === 'IN' && isDesktop()) desktopNotify('ข้อความใหม่จาก LINE', m.text ?? 'ข้อความใหม่', m.conversationId);
+      else if (m.direction === 'IN' && document.hidden) notify(m.text ?? 'ข้อความใหม่');
     });
     socket.on('conversation.updated', () => {
       qc.invalidateQueries({ queryKey: ['conversations'] });

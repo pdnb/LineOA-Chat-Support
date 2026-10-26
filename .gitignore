@@ -6,3 +6,5 @@ next-env.d.ts
 web/uploads
 *.log
 *.tsbuildinfo
+desktop/src-tauri/target
+desktop/src-tauri/gen

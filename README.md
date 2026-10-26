@@ -14,6 +14,7 @@
 | โฟลเดอร์ | รายละเอียด |
 |---|---|
 | `web/` | แอปเดียวแบบ full-stack: **Next.js (App Router) + Ant Design** — Agent console, REST API (`src/app/api`), webhook (`src/app/webhooks`), Socket.IO และ queue worker ผ่าน custom server (`server.ts`); ตรรกะฝั่งเซิร์ฟเวอร์อยู่ที่ `src/server`, Prisma (PostgreSQL) อยู่ที่ `prisma/` |
+| `desktop/` | Desktop app สำหรับเจ้าหน้าที่ (Windows, **Tauri v2**) — เปิด console จากเซิร์ฟเวอร์ แล้วเพิ่มแจ้งเตือน native, ตัวเลขบน taskbar และ system tray ดู [Desktop app](#desktop-app-windows) |
 | `tools/mock-receiver/` | ระบบปลายทางจำลอง (รับงาน + กดส่งสถานะกลับ) ที่ http://localhost:4001 |
 | `tools/simulate-line.js` | ยิง event LINE ปลอมเข้า API (ทดสอบได้โดยไม่ต้องมี LINE OA) |
 | `docs/integration-api.md` | สเปกสำหรับทีมระบบปลายทาง |
@@ -110,6 +111,34 @@ node tools/simulate-line.js postback "action=cat&code=repair"
 
 เฉพาะบัญชีที่ผู้ดูแลระบบสร้างไว้เท่านั้นที่เข้าได้ — เข้าด้วย Auth0 ครั้งแรกระบบจับคู่ด้วยอีเมลที่ยืนยันแล้ว แล้วผูกบัญชีกับ Auth0 user id (ขึ้นแท็ก “Auth0” ในหน้าเจ้าหน้าที่) ครั้งต่อไปใช้ user id แม้อีเมลใน Auth0 จะเปลี่ยน; อีเมลที่ไม่มีในระบบหรือบัญชีที่ปิดใช้งานจะเข้าไม่ได้ แนะนำให้ปิด Sign up ของ connection ใน Auth0 ด้วย
 สิทธิ์ (ผู้ดูแล/เจ้าหน้าที่) และ LINE OA ที่ดูแลยังกำหนดในหน้าเจ้าหน้าที่เหมือนเดิม; ออกจากระบบจะออกจาก Auth0 ด้วย
+
+## Desktop app (Windows)
+
+แอปสำหรับเจ้าหน้าที่ที่เปิด Agent Console จากเซิร์ฟเวอร์ที่ deploy ไว้ (ไม่ได้รันเซิร์ฟเวอร์ในเครื่อง) สิ่งที่เพิ่มจากการเปิดผ่านเบราว์เซอร์:
+
+- **แจ้งเตือน Windows** เมื่อลูกค้าส่งข้อความใหม่ (ไม่แจ้งถ้ากำลังดูหน้าต่างอยู่) กดที่แจ้งเตือนแล้วจะเปิดแชตนั้น
+- **ตัวเลขเรื่องรอรับ** บนไอคอน taskbar และจุดแดงบนไอคอน tray (ตัวเลขเดียวกับ badge “กล่องแชต”) ไอคอน taskbar กะพริบเมื่อมีเรื่องเข้าคิวเพิ่ม
+- **System tray**: กดปิดหน้าต่างแล้วแอปยังทำงานต่อใน tray คลิกไอคอนเพื่อเปิด/ซ่อน เมนูมี “เปลี่ยนเซิร์ฟเวอร์…” และ “ออก”
+- ลิงก์รูป/ไฟล์ในแชตเปิดในเบราว์เซอร์ปกติ; เข้าสู่ระบบด้วย Auth0 ได้ภายในแอป
+
+เปิดครั้งแรกจะถามแค่ **Server URL** (เช่น `https://hotline.example.com`) แอปจะตรวจกับ `/health` ก่อนบันทึก (เก็บที่ `%APPDATA%\com.hotline.desktop\config.json`) แอปอนุญาตให้เฉพาะหน้าเว็บจาก URL นั้นเรียกคำสั่งแจ้งเตือน/ตัวเลขได้
+ฟีเจอร์แจ้งเตือนและตัวเลขต้องใช้เว็บเวอร์ชันที่มี `web/src/lib/desktop.ts` — deploy เว็บใหม่ก่อนแจกแอป
+
+ต้องมี [Rust](https://rustup.rs/) และ Visual Studio Build Tools (workload “Desktop development with C++”)
+
+```bash
+npm run dev:desktop
+```
+
+สร้างตัวติดตั้ง (ได้ไฟล์ `desktop/src-tauri/target/release/bundle/nsis/Hotline_<version>_x64-setup.exe` ติดตั้งแบบรายผู้ใช้ ไม่ต้องใช้สิทธิ์ admin):
+
+```bash
+npm run build:desktop
+```
+
+ตั้ง `HOTLINE_SERVER_URL=https://...` ตอน build เพื่อเติม URL เริ่มต้นในหน้าตั้งค่าให้เจ้าหน้าที่ แก้โลโก้ที่ `web/src/app/icon.svg` แล้วรัน `npm run icons -w desktop` เพื่อสร้างไอคอนแอป/badge ใหม่
+
+> ข้อจำกัด: installer ยังไม่ได้ sign (Windows SmartScreen จะเตือนตอนติดตั้งครั้งแรก — กด “More info → Run anyway”); ตอน `dev:desktop` แจ้งเตือนจะขึ้นชื่อ “Windows PowerShell” เพราะยังไม่ได้ติดตั้งแอป
 
 ## การทำงานหลัก
 

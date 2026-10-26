@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup",
+  "description": "Local server setup page",
+  "windows": ["setup"],
+  "permissions": ["core:default", "allow-get-server-url", "allow-set-server-url"]
+}

@@ -1,16 +1,16 @@
 # Integration API — สำหรับระบบปลายทางที่รับงาน (Job)
 
-ระบบ CC LineOA Support จะส่งงานไปยังระบบของคุณผ่าน HTTP POST และรอรับการแจ้งสถานะกลับผ่าน Callback URL
+ระบบ Hotline จะส่งงานไปยังระบบของคุณผ่าน HTTP POST และรอรับการแจ้งสถานะกลับผ่าน Callback URL
 ทั้งสองทิศทางยืนยันตัวตนด้วย **HMAC-SHA256** โดยใช้ `secret` ของ Integration นั้น (ดู/สร้างใหม่ได้ที่หน้า *ระบบปลายทาง*)
 
 ```
-CC LineOA Support ──POST {endpointUrl}──────────────▶ ระบบของคุณ      (สร้างงาน)
-CC LineOA Support ◀──POST {callbackUrl}────────────── ระบบของคุณ      (แจ้งสถานะ)
-                          │
-                          └─▶ แจ้งลูกค้าใน LINE อัตโนมัติ
+Hotline ──POST {endpointUrl}──────────────▶ ระบบของคุณ      (สร้างงาน)
+Hotline ◀──POST {callbackUrl}────────────── ระบบของคุณ      (แจ้งสถานะ)
+                │
+                └─▶ แจ้งลูกค้าใน LINE อัตโนมัติ
 ```
 
-## 1. รับงาน (CC LineOA Support → ระบบของคุณ)
+## 1. รับงาน (Hotline → ระบบของคุณ)
 
 `POST {endpointUrl}`
 
@@ -64,7 +64,7 @@ CC LineOA Support ◀──POST {callbackUrl}───────────�
 
 ปุ่ม “ทดสอบ” จะส่ง `{"event":"ping","sentAt":"..."}` พร้อมลายเซ็นเดียวกัน ให้ตอบ 2xx
 
-## 2. แจ้งสถานะกลับ (ระบบของคุณ → CC LineOA Support)
+## 2. แจ้งสถานะกลับ (ระบบของคุณ → Hotline)
 
 `POST {callbackUrl}` — ใช้ URL จาก `callbackUrl` ใน payload (หรือดูได้ที่หน้า *ระบบปลายทาง*)
 
@@ -115,7 +115,7 @@ SENT ──▶ ACCEPTED ──▶ IN_PROGRESS ──▶ DONE
 ```js
 const crypto = require('crypto');
 app.post('/jobs', express.raw({ type: 'application/json' }), (req, res) => {
-  const expected = 'sha256=' + crypto.createHmac('sha256', process.env.CC_SECRET).update(req.body).digest('hex');
+  const expected = 'sha256=' + crypto.createHmac('sha256', process.env.HOTLINE_SECRET).update(req.body).digest('hex');
   const given = req.get('X-Signature') || '';
   if (expected.length !== given.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(given))) {
     return res.status(401).end();
@@ -129,7 +129,7 @@ app.post('/jobs', express.raw({ type: 'application/json' }), (req, res) => {
 ### ตรวจลายเซ็น (PHP / Laravel)
 
 ```php
-$expected = 'sha256=' . hash_hmac('sha256', $request->getContent(), config('services.cc_lineoa_support.secret'));
+$expected = 'sha256=' . hash_hmac('sha256', $request->getContent(), config('services.hotline.secret'));
 abort_unless(hash_equals($expected, (string) $request->header('X-Signature')), 401);
 ```
 

@@ -87,7 +87,7 @@ async function call(
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
 
-describe('CC LineOA Support flow (e2e)', () => {
+describe('Hotline flow (e2e)', () => {
   let m: Awaited<ReturnType<typeof load>>;
   let prisma: PrismaClient;
   /** Stub LINE client per OA; `line` is the default OA's. */

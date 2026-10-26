@@ -312,7 +312,7 @@ function post(integration: Integration, body: string, idempotencyKey: string) {
     'Content-Type': 'application/json',
     'X-Signature': signBody(body, integration.secret),
     'Idempotency-Key': idempotencyKey,
-    'User-Agent': 'cc-lineoa-support/1.0',
+    'User-Agent': 'hotline/1.0',
   };
   return fetch(integration.endpointUrl, {
     method: 'POST',

@@ -68,7 +68,7 @@ export default function LoginPage() {
           </Flex>
           <div>
             <Typography.Title level={4} style={{ margin: 0 }}>
-              CC LineOA Support
+              Hotline
             </Typography.Title>
             <Typography.Text type="secondary">เข้าสู่ระบบสำหรับเจ้าหน้าที่</Typography.Text>
           </div>

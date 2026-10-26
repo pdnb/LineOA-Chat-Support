@@ -7,7 +7,7 @@ import { Providers } from './providers';
 
 const anuphan = Anuphan({ subsets: ['thai', 'latin'], weight: ['400', '500', '600', '700'], variable: '--font-anuphan' });
 
-export const metadata: Metadata = { title: 'CC LineOA Support' };
+export const metadata: Metadata = { title: 'Hotline' };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

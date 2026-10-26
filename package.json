@@ -1,5 +1,5 @@
 {
-  "name": "cc-lineoa-support",
+  "name": "hotline",
   "private": true,
   "workspaces": ["web", "tools/mock-receiver"],
   "scripts": {

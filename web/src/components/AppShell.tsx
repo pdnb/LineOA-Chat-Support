@@ -104,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <MessageOutlined />
               </Flex>
-              <div style={{ fontWeight: 600 }}>CC LineOA Support</div>
+              <div style={{ fontWeight: 600 }}>Hotline</div>
             </Flex>
             <Menu
               mode="inline"

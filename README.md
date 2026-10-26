@@ -1,6 +1,6 @@
-# CC LineOA Support
+# Hotline
 
-ระบบ CC LineOA Support ผ่านแชต LINE Official Account (รองรับหลาย OA): Bot คัดกรองเรื่อง → เจ้าหน้าที่ตอบผ่านหน้าเว็บ → เปิดงาน (Job) ส่งต่อไปยังระบบอื่นผ่าน Webhook → ระบบปลายทางแจ้งสถานะกลับ → แจ้งลูกค้าใน LINE อัตโนมัติ
+สายด่วนบริการลูกค้าผ่านแชต LINE Official Account (รองรับหลาย OA): Bot คัดกรองเรื่อง → เจ้าหน้าที่ตอบผ่านหน้าเว็บ → เปิดงาน (Job) ส่งต่อไปยังระบบอื่นผ่าน Webhook → ระบบปลายทางแจ้งสถานะกลับ → แจ้งลูกค้าใน LINE อัตโนมัติ
 
 ```
 ลูกค้า (LINE) ──▶ /webhooks/line ──▶ คิว ──▶ Bot (เมนู/ฟอร์ม) ──┬──▶ สร้าง Job อัตโนมัติ ─┐
@@ -169,4 +169,4 @@ volume `pgdata` และ `uploads` ถูกเก็บถาวร — ตั
 4. Environment Variables: `DATABASE_URL` (จากข้อ 1), `PUBLIC_BASE_URL` (= domain แบบ https), `JWT_SECRET` (สุ่มยาว ๆ), `ADMIN_EMAIL`, `ADMIN_PASSWORD` และค่าอื่นตาม `web/.env.example` ตามต้องการ
 5. Healthcheck: path `/health` port `3000`
 
-ทดสอบ image ในเครื่อง: `docker build -t linecc .`
+ทดสอบ image ในเครื่อง: `docker build -t hotline .`

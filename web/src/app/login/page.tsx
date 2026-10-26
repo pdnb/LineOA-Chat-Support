@@ -1,11 +1,12 @@
 'use client';
 
-import { LoginOutlined, MessageOutlined } from '@ant-design/icons';
+import { LoginOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Card, Divider, Flex, Form, Input, Typography } from 'antd';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ErrorAlert } from '@/components/ErrorAlert';
+import { Logo } from '@/components/Logo';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
@@ -59,13 +60,7 @@ export default function LoginPage() {
     <Flex align="center" justify="center" style={{ minHeight: '100%', padding: 16 }}>
       <Card style={{ width: '100%', maxWidth: 380 }}>
         <Flex align="center" gap={12} style={{ marginBottom: 24 }}>
-          <Flex
-            align="center"
-            justify="center"
-            style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--brand)', color: '#fff', fontSize: 20 }}
-          >
-            <MessageOutlined />
-          </Flex>
+          <Logo size={40} />
           <div>
             <Typography.Title level={4} style={{ margin: 0 }}>
               Hotline

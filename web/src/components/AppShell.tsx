@@ -19,6 +19,7 @@ import { createContext, ReactNode, useContext, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useRealtime } from '@/lib/realtime';
+import { Logo } from './Logo';
 import { UserAvatar } from './UserAvatar';
 
 const PresenceContext = createContext<string[]>([]);
@@ -97,13 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <Flex vertical style={{ height: '100%' }}>
             <Flex align="center" gap={10} style={{ padding: 16 }}>
-              <Flex
-                align="center"
-                justify="center"
-                style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--brand)', color: '#fff', fontSize: 16 }}
-              >
-                <MessageOutlined />
-              </Flex>
+              <Logo size={32} />
               <div style={{ fontWeight: 600 }}>Hotline</div>
             </Flex>
             <Menu

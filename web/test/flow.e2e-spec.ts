@@ -438,6 +438,29 @@ describe('Hotline flow (e2e)', () => {
       await prisma.lineChannel.update({ where: { id: branchId }, data: { isActive: true } });
     });
 
+    it('queues chats straight for an agent when the OA has the bot switched off', async () => {
+      await prisma.lineChannel.update({ where: { id: branchId }, data: { botEnabled: false } });
+      const sentBefore = lines[branchId].sent.length;
+
+      // A follow alone opens nothing; the first message goes to the queue with no auto reply.
+      await lineEvent('Unobot0001', { type: 'follow' }, branchId, LINE_SECRET_B);
+      expect(await prisma.conversation.count({ where: { contact: { lineUserId: 'Unobot0001' } } })).toBe(0);
+      await sayTo(branchId, LINE_SECRET_B, 'Unobot0001', 'สวัสดี');
+      const conv = await prisma.conversation.findFirstOrThrow({
+        where: { channelId: branchId, contact: { lineUserId: 'Unobot0001' } },
+        include: { messages: true },
+      });
+      expect(conv.status).toBe('QUEUED');
+      expect(conv.messages.some((msg) => msg.senderType === 'BOT')).toBe(false);
+      expect(conv.messages.some((msg) => msg.senderType === 'SYSTEM')).toBe(true);
+
+      // Job tracking is part of the bot, so it stays quiet too.
+      await sayTo(branchId, LINE_SECRET_B, 'Unobot0001', 'ติดตามงาน');
+      expect(lines[branchId].sent.length).toBe(sentBefore);
+
+      await prisma.lineChannel.update({ where: { id: branchId }, data: { botEnabled: true } });
+    });
+
     it('shows agents only the OAs they are assigned to', async () => {
       await sayTo(branchId, LINE_SECRET_B, 'Ubranch0001', 'คุยกับเจ้าหน้าที่');
       const branchConv = await prisma.conversation.findFirstOrThrow({

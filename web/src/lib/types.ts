@@ -31,6 +31,7 @@ export interface LineChannel extends LineChannelOption {
   botUserId: string | null;
   greeting: string | null;
   handoffText: string | null;
+  botEnabled: boolean;
   isActive: boolean;
   hasSecret: boolean;
   tokenHint: string | null;

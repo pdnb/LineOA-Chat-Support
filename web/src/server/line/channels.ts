@@ -14,6 +14,7 @@ export const LineChannelBody = z.object({
   accessToken: z.string().max(1000).optional(),
   greeting: z.string().max(2000).nullable().optional(),
   handoffText: z.string().max(2000).nullable().optional(),
+  botEnabled: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 

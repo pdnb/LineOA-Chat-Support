@@ -18,6 +18,7 @@ interface Draft {
   accessToken: string;
   greeting: string;
   handoffText: string;
+  botEnabled: boolean;
   isActive: boolean;
   hasSecret: boolean;
   tokenHint: string | null;
@@ -51,6 +52,7 @@ export default function LineChannelsPage() {
         accessToken: d.accessToken,
         greeting: d.greeting,
         handoffText: d.handoffText,
+        botEnabled: d.botEnabled,
         isActive: d.isActive,
       };
       return d.id ? api(`/api/line-channels/${d.id}`, { method: 'PUT', json }) : api('/api/line-channels', { method: 'POST', json });
@@ -67,6 +69,11 @@ export default function LineChannelsPage() {
       if (res.ok) refresh();
     },
   });
+  const toggleBot = useMutation({
+    mutationFn: (ch: LineChannel) =>
+      api(`/api/line-channels/${ch.id}`, { method: 'PUT', json: { name: ch.name, botEnabled: !ch.botEnabled } }),
+    onSuccess: refresh,
+  });
 
   const blank: Draft = {
     name: '',
@@ -74,6 +81,7 @@ export default function LineChannelsPage() {
     accessToken: '',
     greeting: '',
     handoffText: '',
+    botEnabled: true,
     isActive: true,
     hasSecret: false,
     tokenHint: null,
@@ -105,7 +113,16 @@ export default function LineChannelsPage() {
                 </Flex>
               }
               extra={
-                <Flex gap={8}>
+                <Flex align="center" gap={8}>
+                  <Flex align="center" gap={6}>
+                    <Switch
+                      size="small"
+                      checked={ch.botEnabled}
+                      loading={toggleBot.isPending && toggleBot.variables?.id === ch.id}
+                      onChange={() => toggleBot.mutate(ch)}
+                    />
+                    Bot
+                  </Flex>
                   <Button
                     size="small"
                     icon={<ThunderboltOutlined />}
@@ -124,6 +141,7 @@ export default function LineChannelsPage() {
                         accessToken: '',
                         greeting: ch.greeting ?? '',
                         handoffText: ch.handoffText ?? '',
+                        botEnabled: ch.botEnabled,
                         isActive: ch.isActive,
                         hasSecret: ch.hasSecret,
                         tokenHint: ch.tokenHint,
@@ -165,7 +183,13 @@ export default function LineChannelsPage() {
                   {
                     key: 'texts',
                     label: 'ข้อความ Bot',
-                    children: ch.greeting || ch.handoffText ? 'กำหนดเอง' : 'ใช้ค่ากลางจาก “ตั้งค่าข้อความ”',
+                    children: !ch.botEnabled ? (
+                      <ToneTag tone="red">ปิด Bot · แชตใหม่เข้าคิวเจ้าหน้าที่ทันที</ToneTag>
+                    ) : ch.greeting || ch.handoffText ? (
+                      'กำหนดเอง'
+                    ) : (
+                      'ใช้ค่ากลางจาก “ตั้งค่าข้อความ”'
+                    ),
                   },
                 ]}
               />
@@ -233,6 +257,10 @@ export default function LineChannelsPage() {
                 onChange={(e) => setDraft({ ...draft, handoffText: e.target.value })}
               />
             </Form.Item>
+            <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
+              <Switch size="small" checked={draft.botEnabled} onChange={(v) => setDraft({ ...draft, botEnabled: v })} />
+              เปิด Bot ตอบอัตโนมัติ (ถ้าปิด แชตใหม่จะเข้าคิวเจ้าหน้าที่ทันที)
+            </Flex>
             <Flex align="center" gap={8}>
               <Switch size="small" checked={draft.isActive} onChange={(v) => setDraft({ ...draft, isActive: v })} />
               เปิดใช้งาน (ถ้าปิด ระบบจะไม่รับ event จาก OA นี้)

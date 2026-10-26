@@ -93,6 +93,8 @@ model LineChannel {
   /// Per-OA overrides of the `bot.greeting` / `bot.handoffText` settings
   greeting      String?
   handoffText   String?
+  /// When false, new chats skip the bot and go straight to the agent queue
+  botEnabled    Boolean        @default(true)
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())
   contacts      Contact[]

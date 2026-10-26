@@ -1,4 +1,4 @@
-import { Contact, Prisma } from '@prisma/client';
+import { Contact, Conversation, Prisma } from '@prisma/client';
 import { BotInput, isTrackInput } from '../bot/engine';
 import { handleBot } from '../bot/service';
 import * as conversations from '../conversations';
@@ -45,8 +45,12 @@ export async function processLineEvent(task: LineEventTask) {
   if (event.type === 'unfollow') return;
   const line = await getLineClient(channelId);
   const contact = await ensureContact(line, channelId, userId);
+  const channel = await prisma.lineChannel.findUnique({ where: { id: channelId }, select: { botEnabled: true } });
+  const botEnabled = channel?.botEnabled ?? true;
 
   if (event.type === 'follow') {
+    // Without the bot there is nothing to say yet; the chat opens on the customer's first message.
+    if (!botEnabled) return;
     const conv = await conversations.getOrOpen(contact);
     if (conv.status === 'BOT') await handleBot(conv, contact, { kind: 'follow' }, event.replyToken);
     return;
@@ -62,16 +66,25 @@ export async function processLineEvent(task: LineEventTask) {
     if (!seen) await conversations.recordInbound(conv, await toInbound(line, event.message));
     const input: BotInput =
       event.message.type === 'text' ? { kind: 'text', text: event.message.text ?? '' } : { kind: 'other' };
-    if (conv.status === 'BOT' || isTrackInput(input)) await handleBot(conv, contact, input, event.replyToken);
+    await respond(conv, contact, input, botEnabled, event.replyToken);
     return;
   }
 
   if (event.type === 'postback' && event.postback) {
     const conv = await conversations.getOrOpen(contact);
     const input: BotInput = { kind: 'postback', data: event.postback.data };
-    if (conv.status === 'BOT' || isTrackInput(input)) await handleBot(conv, contact, input, event.replyToken);
+    await respond(conv, contact, input, botEnabled, event.replyToken);
     return;
   }
+}
+
+/** Let the bot answer, or when the OA has the bot switched off, queue the chat for an agent without replying. */
+async function respond(conv: Conversation, contact: Contact, input: BotInput, botEnabled: boolean, replyToken?: string) {
+  if (!botEnabled) {
+    if (conv.status === 'BOT') await conversations.handoff(conv.id, 'Bot ปิดอยู่ ส่งเข้าคิวเจ้าหน้าที่');
+    return;
+  }
+  if (conv.status === 'BOT' || isTrackInput(input)) await handleBot(conv, contact, input, replyToken);
 }
 
 async function ensureContact(line: LineClient, channelId: string, lineUserId: string): Promise<Contact> {

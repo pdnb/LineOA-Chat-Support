@@ -1,5 +1,6 @@
 import { JOB_DISPATCH_QUEUE, markFailed, performDispatch } from './jobs';
 import { LINE_EVENTS_QUEUE, LineEventTask, processLineEvent } from './line/events';
+import { startMaintenance } from './maintenance';
 import { deliverPush, LINE_PUSH_QUEUE } from './notifications';
 import { register, startPolling } from './queue';
 
@@ -17,4 +18,5 @@ export function registerHandlers() {
 export function startWorker() {
   registerHandlers();
   startPolling();
+  startMaintenance();
 }

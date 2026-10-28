@@ -1,6 +1,8 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, TaskStatus } from '@prisma/client';
 import { prisma } from './db';
 import { env } from './env';
+import { conflict, notFound } from './http';
+import { emitToAdmins } from './realtime';
 
 export interface ClaimedTask {
   id: string;
@@ -60,6 +62,63 @@ export async function drain(maxTasks = 1000): Promise<number> {
   let processed = 0;
   while (processed < maxTasks && (await processNext())) processed++;
   return processed;
+}
+
+/* Admin views of the queue (the "งานค้างในคิว" page). */
+
+export async function listTasks(f: { status?: TaskStatus; queue?: string; take?: number; skip?: number }) {
+  const where: Prisma.QueueTaskWhereInput = { status: f.status, queue: f.queue || undefined };
+  const [items, total] = await Promise.all([
+    prisma.queueTask.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: Math.min(f.take ?? 50, 200),
+      skip: f.skip ?? 0,
+    }),
+    prisma.queueTask.count({ where }),
+  ]);
+  return { items, total };
+}
+
+/** Task counts per queue and status. */
+export async function taskStats() {
+  const rows = await prisma.queueTask.groupBy({ by: ['queue', 'status'], _count: true });
+  return rows.map((r) => ({ queue: r.queue, status: r.status, count: r._count }));
+}
+
+/** Run a failed task again from scratch. */
+export async function retryTask(id: string) {
+  const { count } = await prisma.queueTask.updateMany({
+    where: { id, status: 'FAILED' },
+    data: { status: 'PENDING', attempts: 0, runAt: new Date(), lockedAt: null },
+  });
+  if (!count) {
+    if (!(await prisma.queueTask.findUnique({ where: { id }, select: { id: true } }))) throw notFound('Task not found');
+    throw conflict('ลองใหม่ได้เฉพาะงานที่ล้มเหลว');
+  }
+}
+
+export async function retryFailed(queue?: string) {
+  const { count } = await prisma.queueTask.updateMany({
+    where: { status: 'FAILED', queue: queue || undefined },
+    data: { status: 'PENDING', attempts: 0, runAt: new Date(), lockedAt: null },
+  });
+  return count;
+}
+
+/** Only finished (DONE / FAILED) tasks can be deleted; pending and running ones still have work to do. */
+export async function deleteTask(id: string) {
+  const { count } = await prisma.queueTask.deleteMany({ where: { id, status: { in: ['DONE', 'FAILED'] } } });
+  if (!count) {
+    if (!(await prisma.queueTask.findUnique({ where: { id }, select: { id: true } }))) throw notFound('Task not found');
+    throw conflict('ลบได้เฉพาะงานที่เสร็จหรือล้มเหลวแล้ว');
+  }
+}
+
+/** Remove DONE tasks last touched before `olderThan`; they are kept only for troubleshooting. */
+export async function cleanupDone(olderThan: Date) {
+  const { count } = await prisma.queueTask.deleteMany({ where: { status: 'DONE', updatedAt: { lt: olderThan } } });
+  return count;
 }
 
 async function tick() {
@@ -126,6 +185,7 @@ async function fail(task: ClaimedTask, reg: Registration, error: Error) {
       runAt: exhausted ? undefined : new Date(Date.now() + backoffMs),
     },
   });
+  if (exhausted) emitToAdmins('queue.failed', { id: task.id, queue: task.queue, error: error.message.slice(0, 300) });
   if (exhausted && reg.onFailed) {
     try {
       await reg.onFailed(task.payload, error);

@@ -43,6 +43,7 @@ const load = async () => ({
   channels: await import('@/server/line/channels'),
   bcrypt: (await import('bcryptjs')).default,
   auth0: await import('@/server/auth0'),
+  sla: await import('@/server/sla'),
   routes: {
     lineWebhook: await import('@/app/webhooks/line/route'),
     lineChannelWebhook: await import('@/app/webhooks/line/[channelId]/route'),
@@ -61,6 +62,22 @@ const load = async () => ({
     conversations: await import('@/app/api/conversations/route'),
     conversation: await import('@/app/api/conversations/[id]/route'),
     messages: await import('@/app/api/conversations/[id]/messages/route'),
+    transfer: await import('@/app/api/conversations/[id]/transfer/route'),
+    reopen: await import('@/app/api/conversations/[id]/reopen/route'),
+    resolve: await import('@/app/api/conversations/[id]/resolve/route'),
+    stickers: await import('@/app/api/conversations/[id]/stickers/route'),
+    attachments: await import('@/app/api/conversations/[id]/attachments/route'),
+    contactTags: await import('@/app/api/contacts/tags/route'),
+    canned: await import('@/app/api/canned-replies/route'),
+    settings: await import('@/app/api/settings/route'),
+    settingKey: await import('@/app/api/settings/[key]/route'),
+    queueTasks: await import('@/app/api/queue-tasks/route'),
+    queueTask: await import('@/app/api/queue-tasks/[id]/route'),
+    queueRetry: await import('@/app/api/queue-tasks/[id]/retry/route'),
+    queuePurge: await import('@/app/api/queue-tasks/purge/route'),
+    auditLogs: await import('@/app/api/audit-logs/route'),
+    reportAgents: await import('@/app/api/reports/agents/route'),
+    reportExport: await import('@/app/api/reports/export/route'),
     handoff: await import('@/app/api/conversations/[id]/handoff/route'),
     report: await import('@/app/api/reports/summary/route'),
     jobs: await import('@/app/api/jobs/route'),
@@ -158,7 +175,7 @@ describe('Hotline flow (e2e)', () => {
     m.worker.registerHandlers();
 
     await prisma.$executeRawUnsafe(
-      'TRUNCATE "JobEvent","Job","Message","Conversation","Contact","Category","Integration","User","QueueTask","JobCounter","Setting","LineChannel" CASCADE',
+      'TRUNCATE "JobEvent","Job","Message","Conversation","Contact","Category","Integration","User","QueueTask","JobCounter","Setting","LineChannel","CannedReply","AuditLog" CASCADE',
     );
     await prisma.lineChannel.create({ data: { id: 'default', name: 'OA หลัก', channelSecret: LINE_SECRET } });
     const branch = await prisma.lineChannel.create({
@@ -615,6 +632,283 @@ describe('Hotline flow (e2e)', () => {
         expect(callback.headers.get('location')).toBe('https://cc.example.test/login?error=auth0_failed');
         expect(callback.headers.get('set-cookie')).toMatch(/Max-Age=0/);
       });
+    });
+  });
+
+  describe('support features', () => {
+    let admin: Record<string, string>;
+    let agent1Id: string;
+    let agent2Id: string;
+    let agent2: Record<string, string>;
+    let branchAgent: Record<string, string>;
+    let branchAgentId: string;
+
+    /** Multipart request (FormData sets its own content type). */
+    async function callForm(handler: Handler, path: string, form: FormData, headers: Record<string, string>, params: Record<string, string>) {
+      const res = await handler(new Request(`http://test.local${path}`, { method: 'POST', headers, body: form }), {
+        params: Promise.resolve(params),
+      });
+      const text = await res.text();
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    }
+    const post = (handler: Handler, path: string, headers: Record<string, string>, params: Record<string, string>, body: unknown = {}) =>
+      call(handler, path, { method: 'POST', headers, body, params });
+    /** A customer who asked for an agent; returns their queued conversation. */
+    async function queuedChat(userId: string) {
+      await say(userId, 'คุยกับเจ้าหน้าที่');
+      return prisma.conversation.findFirstOrThrow({
+        where: { contact: { lineUserId: userId, channelId: 'default' }, status: 'QUEUED' },
+      });
+    }
+    const reply = (convId: string, headers: Record<string, string>, text = 'สวัสดีค่ะ') =>
+      post(m.routes.messages.POST, `/api/conversations/${convId}/messages`, headers, { id: convId }, { text });
+
+    beforeAll(async () => {
+      const hash = await m.bcrypt.hash('pass-1234', 4);
+      agent1Id = (await prisma.user.findUniqueOrThrow({ where: { email: 'agent@test.local' } })).id;
+      await prisma.user.upsert({
+        where: { email: 'admin@test.local' },
+        create: { email: 'admin@test.local', name: 'Admin', role: 'ADMIN', passwordHash: await m.bcrypt.hash('admin-pass-1', 4) },
+        update: {},
+      });
+      agent2Id = (
+        await prisma.user.create({
+          data: { email: 'agent2@test.local', name: 'Agent Two', passwordHash: hash, channels: { connect: { id: 'default' } } },
+        })
+      ).id;
+      branchAgentId = (
+        await prisma.user.create({
+          data: { email: 'branch@test.local', name: 'Branch Agent', passwordHash: hash, channels: { connect: { id: branchId } } },
+        })
+      ).id;
+      admin = await loginAs('admin@test.local', 'admin-pass-1');
+      agent2 = await loginAs('agent2@test.local', 'pass-1234');
+      branchAgent = await loginAs('branch@test.local', 'pass-1234');
+    });
+
+    it('transfers a chat between agents of the OA, with a note', async () => {
+      const conv = await queuedChat('Utransfer0001');
+      expect((await reply(conv.id, auth)).status).toBe(201);
+      const path = `/api/conversations/${conv.id}/transfer`;
+      const params = { id: conv.id };
+
+      const moved = await post(m.routes.transfer.POST, path, auth, params, { userId: agent2Id, note: 'ลูกค้า VIP' });
+      expect(moved.status).toBe(201);
+      expect(moved.body.assignedToId).toBe(agent2Id);
+      const note = await prisma.message.findFirst({ where: { conversationId: conv.id, senderType: 'SYSTEM', text: { contains: 'ลูกค้า VIP' } } });
+      expect(note?.text).toContain('Agent Two');
+
+      // Agent One no longer owns it; Agent Two can't hand it to someone outside the OA.
+      expect((await post(m.routes.transfer.POST, path, auth, params, { userId: agent1Id })).status).toBe(403);
+      expect((await post(m.routes.transfer.POST, path, agent2, params, { userId: branchAgentId })).status).toBe(400);
+      expect((await post(m.routes.transfer.POST, path, agent2, params, { userId: agent1Id })).status).toBe(201);
+      expect(await prisma.auditLog.count({ where: { action: 'conversation.transfer', entityId: conv.id } })).toBe(2);
+    });
+
+    it('filters chats by contact tag, with tags scoped to the agent’s OAs', async () => {
+      const conv = await queuedChat('Utagged0001');
+      const patched = await call(m.routes.contact.PATCH, `/api/contacts/${conv.contactId}`, {
+        method: 'PATCH',
+        headers: auth,
+        body: { tags: ['vip'] },
+        params: { id: conv.contactId },
+      });
+      expect(patched.status).toBe(200);
+      const list = await call(m.routes.conversations.GET, '/api/conversations?view=all&tag=vip', { headers: auth });
+      expect(list.body.map((c: any) => c.id)).toEqual([conv.id]);
+      expect((await call(m.routes.contactTags.GET, '/api/contacts/tags', { headers: auth })).body).toContain('vip');
+      expect((await call(m.routes.contactTags.GET, '/api/contacts/tags', { headers: branchAgent })).body).not.toContain('vip');
+    });
+
+    it('reopens a resolved chat into the same conversation, unless a newer one is open', async () => {
+      const user = 'Ureopen0001';
+      const conv = await queuedChat(user);
+      await reply(conv.id, auth);
+      const params = { id: conv.id };
+      expect((await post(m.routes.resolve.POST, `/api/conversations/${conv.id}/resolve`, auth, params)).status).toBe(201);
+
+      const reopened = await post(m.routes.reopen.POST, `/api/conversations/${conv.id}/reopen`, agent2, params);
+      expect(reopened.status).toBe(201);
+      expect(reopened.body).toMatchObject({ status: 'ASSIGNED', assignedToId: agent2Id, resolvedAt: null });
+      await say(user, 'ขอบคุณที่เปิดเรื่องให้ครับ');
+      expect(await prisma.conversation.count({ where: { contact: { lineUserId: user } } })).toBe(1);
+
+      // Closed again, then the customer writes: a new chat opens and the old one can't be reopened.
+      await post(m.routes.resolve.POST, `/api/conversations/${conv.id}/resolve`, agent2, params);
+      await say(user, 'มีเรื่องใหม่ครับ');
+      expect(await prisma.conversation.count({ where: { contact: { lineUserId: user } } })).toBe(2);
+      expect((await post(m.routes.reopen.POST, `/api/conversations/${conv.id}/reopen`, agent2, params)).status).toBe(409);
+    });
+
+    it('serves canned replies per OA scope; only admins manage them', async () => {
+      const create = (headers: Record<string, string>, body: object) => post(m.routes.canned.POST, '/api/canned-replies', headers, {}, body);
+      expect((await create(admin, { shortcut: 'Hi', text: 'สวัสดีคุณ {name}' })).status).toBe(201);
+      expect((await create(admin, { shortcut: 'br', text: 'เฉพาะสาขา', channelId: branchId })).status).toBe(201);
+      expect((await create(admin, { shortcut: 'hi', text: 'ซ้ำ' })).status).toBe(409);
+      // The same shortcut in another scope is fine.
+      expect((await create(admin, { shortcut: 'hi', text: 'สาขา', channelId: branchId })).status).toBe(201);
+      expect((await create(auth, { shortcut: 'x', text: 'x' })).status).toBe(403);
+
+      const mine = await call(m.routes.canned.GET, '/api/canned-replies', { headers: auth });
+      const shortcuts = mine.body.map((r: any) => `${r.shortcut}:${r.channelId ?? '*'}`);
+      expect(shortcuts).toContain('hi:*');
+      expect(shortcuts.some((s: string) => s.endsWith(branchId))).toBe(false);
+      const settings = await call(m.routes.settings.GET, '/api/settings', { headers: auth });
+      expect(settings.body).not.toHaveProperty('canned.replies');
+    });
+
+    it('sends stickers and files, and pages through long histories', async () => {
+      const conv = await queuedChat('Umedia0001');
+      const params = { id: conv.id };
+      const sticker = (body: object) => post(m.routes.stickers.POST, `/api/conversations/${conv.id}/stickers`, auth, params, body);
+      expect((await sticker({ packageId: 446, stickerId: 1988 })).status).toBe(201);
+      expect(line.sent[line.sent.length - 1].messages[0]).toMatchObject({ type: 'sticker', packageId: '446', stickerId: '1988' });
+      expect((await sticker({ packageId: 446, stickerId: 99 })).status).toBe(400);
+
+      const pdf = new FormData();
+      pdf.append('file', new File([new Uint8Array([37, 80, 68, 70])], 'ใบเสนอราคา.pdf', { type: 'application/pdf' }));
+      const sent = await callForm(m.routes.attachments.POST, `/api/conversations/${conv.id}/attachments`, pdf, auth, params);
+      expect(sent.status).toBe(201);
+      expect(sent.body[0]).toMatchObject({ type: 'file', text: 'ใบเสนอราคา.pdf', payload: { sentAs: 'link' } });
+      expect(lastTextTo()).toMatch(/ใบเสนอราคา\.pdf[\s\S]*https:\/\/cc\.example\.test\/media\/[0-9a-f-]{36}\.pdf/);
+      const html = new FormData();
+      html.append('file', new File(['<script>'], 'x.html', { type: 'text/html' }));
+      expect((await callForm(m.routes.attachments.POST, `/api/conversations/${conv.id}/attachments`, html, auth, params)).status).toBe(400);
+
+      // 120 old messages on a fresh chat: newest 50 first, then pages of older ones without overlap.
+      const contact = await prisma.contact.findFirstOrThrow({ where: { lineUserId: 'Umedia0001' } });
+      const long = await prisma.conversation.create({ data: { contactId: contact.id, channelId: 'default', status: 'RESOLVED' } });
+      const t0 = Date.now() - 3600_000;
+      await prisma.message.createMany({
+        data: Array.from({ length: 120 }, (_, i) => ({
+          conversationId: long.id,
+          direction: 'IN' as const,
+          senderType: 'CUSTOMER' as const,
+          type: 'text',
+          text: `m${i}`,
+          createdAt: new Date(t0 + i * 1000),
+        })),
+      });
+      const lp = { id: long.id };
+      const first = await call(m.routes.conversation.GET, `/api/conversations/${long.id}`, { headers: auth, params: lp });
+      expect(first.body.messages.map((x: any) => x.text)).toEqual(Array.from({ length: 50 }, (_, i) => `m${70 + i}`));
+      expect(first.body.hasMoreMessages).toBe(true);
+      const page = (before: string) =>
+        call(m.routes.messages.GET, `/api/conversations/${long.id}/messages?before=${before}`, { headers: auth, params: lp });
+      const second = await page(first.body.messages[0].id);
+      expect(second.body.messages.map((x: any) => x.text)).toEqual(Array.from({ length: 50 }, (_, i) => `m${20 + i}`));
+      expect(second.body.hasMore).toBe(true);
+      const third = await page(second.body.messages[0].id);
+      expect(third.body.messages).toHaveLength(20);
+      expect(third.body.hasMore).toBe(false);
+    });
+
+    it('asks for a rating after resolve and records the first tap only', async () => {
+      await prisma.lineChannel.update({ where: { id: 'default' }, data: { csatEnabled: true } });
+      const user = 'Ucsat0001';
+      const conv = await queuedChat(user);
+      await reply(conv.id, auth);
+      await post(m.routes.resolve.POST, `/api/conversations/${conv.id}/resolve`, auth, { id: conv.id });
+      await m.queue.drain();
+      const card = line.sent[line.sent.length - 1];
+      expect(card).toMatchObject({ kind: 'push', to: user });
+      expect(card.messages[0].type).toBe('flex');
+      expect(JSON.stringify(card.messages[0])).toContain(`action=csat&c=${conv.id}&r=5`);
+
+      await tap(user, `action=csat&c=${conv.id}&r=5`);
+      expect(lastTextTo()).toContain('ขอบคุณสำหรับคะแนน');
+      await tap(user, `action=csat&c=${conv.id}&r=1`);
+      const rated = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+      expect(rated.csatRating).toBe(5);
+      // Tapping the card doesn't open a new chat.
+      expect(await prisma.conversation.count({ where: { contact: { lineUserId: user } } })).toBe(1);
+
+      // Someone else's card id is ignored.
+      await say('Ucsat0002', 'สวัสดี');
+      await tap('Ucsat0002', `action=csat&c=${conv.id}&r=1`);
+      expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } })).csatRating).toBe(5);
+
+      // A chat no agent answered gets no card.
+      const botOnly = await prisma.conversation.findFirstOrThrow({ where: { contact: { lineUserId: 'Ucsat0002' } } });
+      await post(m.routes.resolve.POST, `/api/conversations/${botOnly.id}/resolve`, auth, { id: botOnly.id });
+      expect((await prisma.conversation.findUniqueOrThrow({ where: { id: botOnly.id } })).csatSentAt).toBeNull();
+
+      const report = await call(m.routes.report.GET, '/api/reports/summary?days=30', { headers: auth });
+      expect(report.body.csat).toMatchObject({ avg: 5, rated: 1, sent: 1 });
+      await prisma.lineChannel.update({ where: { id: 'default' }, data: { csatEnabled: false } });
+    });
+
+    it('alerts once per wait when a chat breaches its SLA', async () => {
+      const put = (value: object) =>
+        call(m.routes.settingKey.PUT, '/api/settings/sla', { method: 'PUT', headers: admin, body: { value }, params: { key: 'sla' } });
+      expect((await put({ enabled: true, queueWaitMinutes: 0, firstResponseMinutes: 10 })).status).toBe(400);
+      expect((await put({ enabled: true, queueWaitMinutes: 1, firstResponseMinutes: 10 })).status).toBe(200);
+
+      const conv = await queuedChat('Usla0001');
+      // Just queued: within the limit, whatever the database session's time zone is.
+      expect((await m.sla.checkSla()).some((b) => b.id === conv.id)).toBe(false);
+      await prisma.conversation.update({ where: { id: conv.id }, data: { waitingSince: new Date(Date.now() - 2 * 60_000) } });
+      expect((await m.sla.checkSla()).find((b) => b.id === conv.id)?.kind).toBe('queue');
+      expect((await m.sla.checkSla()).some((b) => b.id === conv.id)).toBe(false);
+
+      // Taking the chat starts a new clock: the first answer.
+      await post(m.routes.assign.POST, `/api/conversations/${conv.id}/assign`, auth, { id: conv.id });
+      expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id } })).slaAlertedAt).toBeNull();
+      await prisma.conversation.update({ where: { id: conv.id }, data: { queuedAt: new Date(Date.now() - 20 * 60_000) } });
+      expect((await m.sla.checkSla()).find((b) => b.id === conv.id)?.kind).toBe('response');
+      await put({ enabled: true, queueWaitMinutes: 5, firstResponseMinutes: 10 });
+    });
+
+    it('reports per agent and exports CSV for admins only', async () => {
+      const mine = await call(m.routes.reportAgents.GET, '/api/reports/agents?days=30', { headers: auth });
+      expect(mine.body.agents).toHaveLength(1);
+      expect(mine.body.agents[0]).toMatchObject({ userId: agent1Id });
+      expect(mine.body.agents[0].handled).toBeGreaterThan(0);
+      expect(mine.body.agents[0].csatAvg).toBe(5);
+
+      const all = await call(m.routes.reportAgents.GET, '/api/reports/agents?days=30', { headers: admin });
+      expect(all.body.agents.map((a: any) => a.userId)).toEqual(expect.arrayContaining([agent1Id, agent2Id]));
+
+      const csv = await m.routes.reportExport.GET(new Request('http://test.local/api/reports/export?type=conversations&days=30', { headers: admin }), {
+        params: Promise.resolve({}),
+      });
+      expect(csv.status).toBe(200);
+      expect(csv.headers.get('content-type')).toContain('text/csv');
+      // text() would drop the BOM while decoding; the downloaded bytes keep it for Excel.
+      const bytes = Buffer.from(await csv.arrayBuffer());
+      expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+      const text = bytes.toString('utf8');
+      expect(text.startsWith('﻿id,LINE OA,ลูกค้า')).toBe(true);
+      expect(text).toContain('OA หลัก');
+      const forbidden = await call(m.routes.reportExport.GET, '/api/reports/export?type=jobs', { headers: auth });
+      expect(forbidden.status).toBe(403);
+    });
+
+    it('lets admins inspect, retry, delete and purge queue tasks, with an audit trail', async () => {
+      expect((await call(m.routes.queueTasks.GET, '/api/queue-tasks?status=FAILED', { headers: auth })).status).toBe(403);
+      const failed = await call(m.routes.queueTasks.GET, '/api/queue-tasks?status=FAILED', { headers: admin });
+      expect(failed.status).toBe(200);
+      const task = failed.body.items.find((t: any) => t.queue === 'job-dispatch');
+      expect(task).toBeTruthy();
+      expect(failed.body.stats.some((s: any) => s.status === 'FAILED' && s.count > 0)).toBe(true);
+
+      const tp = { id: task.id };
+      expect((await post(m.routes.queueRetry.POST, `/api/queue-tasks/${task.id}/retry`, admin, tp)).status).toBe(201);
+      expect(await prisma.queueTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'PENDING', attempts: 0 });
+      expect((await post(m.routes.queueRetry.POST, `/api/queue-tasks/${task.id}/retry`, admin, tp)).status).toBe(409);
+      expect((await call(m.routes.queueTask.DELETE, `/api/queue-tasks/${task.id}`, { method: 'DELETE', headers: admin, params: tp })).status).toBe(409);
+      await m.queue.drain();
+      // The job was resent earlier, so the retried dispatch has nothing left to do.
+      expect((await prisma.queueTask.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('DONE');
+      expect((await call(m.routes.queueTask.DELETE, `/api/queue-tasks/${task.id}`, { method: 'DELETE', headers: admin, params: tp })).status).toBe(200);
+
+      const purged = await post(m.routes.queuePurge.POST, '/api/queue-tasks/purge', admin, {}, { olderThanDays: 0 });
+      expect(purged.body.count).toBeGreaterThan(0);
+      expect(await prisma.queueTask.count({ where: { status: 'DONE' } })).toBe(0);
+
+      const logs = await call(m.routes.auditLogs.GET, '/api/audit-logs?action=queue.', { headers: admin });
+      expect(logs.body.items.map((l: any) => l.action)).toEqual(expect.arrayContaining(['queue.retry', 'queue.delete', 'queue.purge']));
+      expect(logs.body.items[0].actor.name).toBe('Admin');
     });
   });
 });

@@ -1,4 +1,6 @@
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import type { SlaConfig } from '../lib/sla';
 import { prisma } from './db';
 import { badRequest } from './http';
 
@@ -15,15 +17,24 @@ export const SETTING_DEFAULTS = {
     DONE: 'เรื่อง {number} ดำเนินการเสร็จสิ้นแล้ว ขอบคุณที่ใช้บริการค่ะ',
     REJECTED: 'ขออภัย เรื่อง {number} ไม่สามารถดำเนินการได้ {note}',
   } as NotifyTemplates,
-  'canned.replies': [
-    'สวัสดีค่ะ เจ้าหน้าที่ยินดีให้บริการค่ะ',
-    'รบกวนขอเบอร์โทรศัพท์สำหรับติดต่อกลับด้วยค่ะ',
-    'รับทราบค่ะ เดี๋ยวเจ้าหน้าที่จะเปิดเรื่องให้นะคะ',
-    'ขอบคุณที่ติดต่อเรานะคะ',
-  ] as string[],
+  /** Alert when a chat waits in the queue, or an assigned chat goes unanswered, longer than this. */
+  sla: { enabled: true, queueWaitMinutes: 5, firstResponseMinutes: 10 } as SlaConfig,
+  'csat.question': 'คุณพึงพอใจกับการให้บริการครั้งนี้แค่ไหนคะ',
+  'csat.thanks': 'ขอบคุณสำหรับคะแนนค่ะ 🙏',
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
+
+/** Stricter checks than "same type as the default" for structured settings. */
+const SETTING_SCHEMAS: Partial<Record<SettingKey, z.ZodType>> = {
+  sla: z.object({
+    enabled: z.boolean(),
+    queueWaitMinutes: z.number().int().min(1).max(1440),
+    firstResponseMinutes: z.number().int().min(1).max(1440),
+  }),
+  'csat.question': z.string().min(1).max(300),
+  'csat.thanks': z.string().min(1).max(300),
+};
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<(typeof SETTING_DEFAULTS)[K]> {
   const row = await prisma.setting.findUnique({ where: { key } });
@@ -42,6 +53,8 @@ export async function setSetting(key: string, value: unknown) {
   const expected = SETTING_DEFAULTS[key as SettingKey];
   const ok = Array.isArray(expected) ? Array.isArray(value) : typeof value === typeof expected && value !== null;
   if (!ok) throw badRequest(`Invalid value for ${key}`);
+  const schema = SETTING_SCHEMAS[key as SettingKey];
+  if (schema && !schema.safeParse(value).success) throw badRequest(`Invalid value for ${key}`);
   const json = value as Prisma.InputJsonValue;
   await prisma.setting.upsert({ where: { key }, create: { key, value: json }, update: { value: json } });
   return value;

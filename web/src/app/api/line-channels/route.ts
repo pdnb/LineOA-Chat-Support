@@ -1,3 +1,4 @@
+import { audit } from '@/server/audit';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { parseBody, route } from '@/server/http';
@@ -10,7 +11,9 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  await requireUser(req, 'ADMIN');
-  const channel = await prisma.lineChannel.create({ data: toData(await parseBody(req, LineChannelBody)) });
+  const user = await requireUser(req, 'ADMIN');
+  const dto = await parseBody(req, LineChannelBody);
+  const channel = await prisma.lineChannel.create({ data: toData(dto) });
+  await audit(user, 'lineChannel.create', { type: 'lineChannel', id: channel.id }, dto);
   return toPublic(channel);
 });

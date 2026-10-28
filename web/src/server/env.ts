@@ -49,4 +49,16 @@ export const env = {
   get queueBackoffMs() {
     return Number(process.env.QUEUE_BACKOFF_MS ?? 2000);
   },
+  /** DONE queue tasks older than this are deleted by the hourly cleanup. */
+  get queueDoneRetentionDays() {
+    return Number(process.env.QUEUE_DONE_RETENTION_DAYS ?? 7);
+  },
+  /** How often the worker looks for chats past their SLA. */
+  get slaCheckMs() {
+    return Number(process.env.SLA_CHECK_MS ?? 60_000);
+  },
+  /** Upload limit for video and audio agents send (images: 10MB, documents: 20MB). */
+  get mediaMaxMb() {
+    return Number(process.env.MEDIA_MAX_MB ?? 50);
+  },
 };

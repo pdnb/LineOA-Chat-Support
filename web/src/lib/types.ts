@@ -32,6 +32,7 @@ export interface LineChannel extends LineChannelOption {
   greeting: string | null;
   handoffText: string | null;
   botEnabled: boolean;
+  csatEnabled: boolean;
   isActive: boolean;
   hasSecret: boolean;
   tokenHint: string | null;
@@ -84,6 +85,12 @@ export interface Conversation {
   unreadCount: number;
   lastMessageText: string | null;
   lastMessageAt: string;
+  queuedAt: string | null;
+  firstResponseAt: string | null;
+  resolvedAt: string | null;
+  waitingSince: string | null;
+  slaAlertedAt: string | null;
+  csatRating: number | null;
   createdAt: string;
 }
 
@@ -100,7 +107,43 @@ export interface Message {
 }
 
 export interface ConversationDetail extends Conversation {
+  /** The latest page; older ones come from GET /api/conversations/:id/messages?before= */
   messages: Message[];
+  hasMoreMessages: boolean;
+}
+
+export interface CannedReply {
+  id: string;
+  shortcut: string;
+  title: string | null;
+  text: string;
+  /** null = every OA */
+  channelId: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface QueueTask {
+  id: string;
+  queue: string;
+  payload: unknown;
+  status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+  attempts: number;
+  maxAttempts: number;
+  runAt: string;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actor: { id: string; name: string } | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  data: unknown;
+  createdAt: string;
 }
 
 export interface Integration {

@@ -13,5 +13,5 @@ export const POST = route<{ id: string }>(async (req, { id }) => {
   if (dto.userId && dto.userId !== user.id && user.role !== 'ADMIN') {
     throw forbidden('เฉพาะผู้ดูแลระบบที่มอบหมายงานให้ผู้อื่นได้');
   }
-  return assign(id, dto.userId ?? user.id);
+  return assign(id, dto.userId ?? user.id, user);
 });

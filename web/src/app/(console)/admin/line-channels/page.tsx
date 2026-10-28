@@ -19,6 +19,7 @@ interface Draft {
   greeting: string;
   handoffText: string;
   botEnabled: boolean;
+  csatEnabled: boolean;
   isActive: boolean;
   hasSecret: boolean;
   tokenHint: string | null;
@@ -53,6 +54,7 @@ export default function LineChannelsPage() {
         greeting: d.greeting,
         handoffText: d.handoffText,
         botEnabled: d.botEnabled,
+        csatEnabled: d.csatEnabled,
         isActive: d.isActive,
       };
       return d.id ? api(`/api/line-channels/${d.id}`, { method: 'PUT', json }) : api('/api/line-channels', { method: 'POST', json });
@@ -82,6 +84,7 @@ export default function LineChannelsPage() {
     greeting: '',
     handoffText: '',
     botEnabled: true,
+    csatEnabled: false,
     isActive: true,
     hasSecret: false,
     tokenHint: null,
@@ -142,6 +145,7 @@ export default function LineChannelsPage() {
                         greeting: ch.greeting ?? '',
                         handoffText: ch.handoffText ?? '',
                         botEnabled: ch.botEnabled,
+                        csatEnabled: ch.csatEnabled,
                         isActive: ch.isActive,
                         hasSecret: ch.hasSecret,
                         tokenHint: ch.tokenHint,
@@ -190,6 +194,11 @@ export default function LineChannelsPage() {
                     ) : (
                       'ใช้ค่ากลางจาก “ตั้งค่าข้อความ”'
                     ),
+                  },
+                  {
+                    key: 'csat',
+                    label: 'ประเมินความพึงพอใจ',
+                    children: ch.csatEnabled ? <ToneTag tone="green">ส่งเมื่อปิดเรื่อง</ToneTag> : 'ไม่ส่ง',
                   },
                 ]}
               />
@@ -261,6 +270,15 @@ export default function LineChannelsPage() {
               <Switch size="small" checked={draft.botEnabled} onChange={(v) => setDraft({ ...draft, botEnabled: v })} />
               เปิด Bot ตอบอัตโนมัติ (ถ้าปิด แชตใหม่จะเข้าคิวเจ้าหน้าที่ทันที)
             </Flex>
+            <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
+              <Switch size="small" checked={draft.csatEnabled} onChange={(v) => setDraft({ ...draft, csatEnabled: v })} />
+              ส่งแบบประเมินความพึงพอใจ (1–5 ดาว) เมื่อเจ้าหน้าที่ปิดเรื่อง
+            </Flex>
+            {draft.csatEnabled && (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: -6 }}>
+                ส่งแบบ push message จึงนับรวมในโควตาข้อความของ OA · แก้ข้อความคำถามได้ที่ “ตั้งค่าข้อความ & SLA”
+              </Typography.Paragraph>
+            )}
             <Flex align="center" gap={8}>
               <Switch size="small" checked={draft.isActive} onChange={(v) => setDraft({ ...draft, isActive: v })} />
               เปิดใช้งาน (ถ้าปิด ระบบจะไม่รับ event จาก OA นี้)

@@ -1,7 +1,13 @@
 import type { Server } from 'socket.io';
 import { prisma } from './db';
 
-export type RealtimeEvent = 'message.created' | 'conversation.updated' | 'job.updated';
+export type RealtimeEvent =
+  | 'message.created'
+  | 'conversation.updated'
+  | 'job.updated'
+  | 'sla.breached'
+  | 'conversation.transferred'
+  | 'queue.failed';
 
 interface RealtimeState {
   /** Set by the custom server once Socket.IO is attached; undefined in tests. */
@@ -16,15 +22,24 @@ const g = globalThis as typeof globalThis & { __realtime?: RealtimeState };
 export const realtime: RealtimeState = (g.__realtime ??= { online: new Map() });
 
 /*
- * Rooms of the `/inbox` namespace: every user joins `agents` (presence), admins join
- * `admins`, and agents join `channel:<id>` for each LINE OA they are assigned to.
+ * Rooms of the `/inbox` namespace: every user joins `agents` (presence) and `user:<id>` (personal
+ * notices), admins join `admins`, and agents join `channel:<id>` for each LINE OA they are assigned to.
  */
 const ADMINS_ROOM = 'admins';
 const channelRoom = (channelId: string) => `channel:${channelId}`;
+export const userRoom = (userId: string) => `user:${userId}`;
 
 /** Sends to admins and to the agents of the event's LINE OA. */
 export function emit(event: RealtimeEvent, data: unknown, channelId: string) {
   realtime.io?.of('/inbox').to(ADMINS_ROOM).to(channelRoom(channelId)).emit(event, data);
+}
+
+export function emitToAdmins(event: RealtimeEvent, data: unknown) {
+  realtime.io?.of('/inbox').to(ADMINS_ROOM).emit(event, data);
+}
+
+export function emitToUser(userId: string, event: RealtimeEvent, data: unknown) {
+  realtime.io?.of('/inbox').to(userRoom(userId)).emit(event, data);
 }
 
 export function emitPresence() {

@@ -1,6 +1,7 @@
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { audit } from '@/server/audit';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { parseBody, route } from '@/server/http';
@@ -16,7 +17,7 @@ const UpdateUserBody = z.object({
 });
 
 export const PATCH = route<{ id: string }>(async (req, { id }) => {
-  await requireUser(req, 'ADMIN');
+  const admin = await requireUser(req, 'ADMIN');
   const { password, channelIds, ...rest } = await parseBody(req, UpdateUserBody);
   const user = await prisma.user.update({
     where: { id },
@@ -29,5 +30,6 @@ export const PATCH = route<{ id: string }>(async (req, { id }) => {
   });
   // Open consoles start/stop receiving the affected OAs' realtime events right away.
   await syncUserRooms(id);
+  await audit(admin, 'user.update', { type: 'user', id }, { ...rest, channelIds, passwordChanged: !!password || undefined });
   return toUserDto(user);
 });

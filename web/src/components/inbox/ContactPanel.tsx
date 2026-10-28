@@ -1,15 +1,16 @@
 'use client';
 
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, StarFilled } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Button, Descriptions, Empty, Flex, Input, Typography } from 'antd';
+import { Badge, Button, Descriptions, Empty, Flex, Input, Select, Typography } from 'antd';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { fmtRelative } from '@/lib/format';
 import { Contact, Conversation, ConversationDetail, Job } from '@/lib/types';
 import { useOnline } from '../AppShell';
 import styles from '../chat.module.css';
-import { ChannelTag, JobStatusTag } from '../StatusTag';
+import { ChannelTag, ConversationStatusTag, JobStatusTag } from '../StatusTag';
 import { UserAvatar } from '../UserAvatar';
 
 function SectionTitle({ children, extra }: { children: React.ReactNode; extra?: React.ReactNode }) {
@@ -31,10 +32,15 @@ export function ContactPanel({ conversation, onCreateJob }: { conversation: Conv
     queryKey: ['contact', contactId],
     queryFn: () => api<Contact & { jobs: Job[]; conversations: Conversation[] }>(`/api/contacts/${contactId}`),
   });
-  const [form, setForm] = useState({ phone: '', note: '', tags: '' });
+  const knownTags = useQuery({
+    queryKey: ['contact-tags', conversation.channelId],
+    queryFn: () => api<string[]>(`/api/contacts/tags?channelId=${conversation.channelId}`),
+    staleTime: 60_000,
+  });
+  const [form, setForm] = useState<{ phone: string; note: string; tags: string[] }>({ phone: '', note: '', tags: [] });
   const data = contact.data;
   useEffect(() => {
-    if (data) setForm({ phone: data.phone ?? '', note: data.note ?? '', tags: data.tags.join(', ') });
+    if (data) setForm({ phone: data.phone ?? '', note: data.note ?? '', tags: data.tags });
   }, [data?.id, data?.phone, data?.note, data?.tags.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useMutation({
@@ -44,15 +50,18 @@ export function ContactPanel({ conversation, onCreateJob }: { conversation: Conv
         json: {
           phone: form.phone,
           note: form.note,
-          tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+          tags: [...new Set(form.tags.map((t) => t.trim()).filter(Boolean))],
         },
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['contact', contactId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contact', contactId] });
+      qc.invalidateQueries({ queryKey: ['contact-tags'] });
+    },
   });
 
   const collected = conversation.collected ?? {};
   const fields = conversation.category?.form ?? [];
-  const dirty = data && (form.phone !== (data.phone ?? '') || form.note !== (data.note ?? '') || form.tags !== data.tags.join(', '));
+  const dirty = data && (form.phone !== (data.phone ?? '') || form.note !== (data.note ?? '') || form.tags.join(',') !== data.tags.join(','));
   const assignee = conversation.assignedTo;
 
   return (
@@ -85,7 +94,15 @@ export function ContactPanel({ conversation, onCreateJob }: { conversation: Conv
         <Flex vertical gap={8}>
           <SectionTitle>ข้อมูลลูกค้า</SectionTitle>
           <Input placeholder="เบอร์โทร" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          <Input placeholder="แท็ก (คั่นด้วย ,)" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
+          <Select
+            mode="tags"
+            placeholder="แท็ก เช่น VIP"
+            value={form.tags}
+            onChange={(tags: string[]) => setForm({ ...form, tags })}
+            tokenSeparators={[',']}
+            aria-label="แท็ก"
+            options={(knownTags.data ?? []).map((t) => ({ value: t, label: t }))}
+          />
           <Input.TextArea rows={3} placeholder="บันทึกภายใน" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           {dirty && (
             <Button type="primary" size="small" style={{ alignSelf: 'flex-start' }} loading={save.isPending} onClick={() => save.mutate()}>
@@ -125,6 +142,43 @@ export function ContactPanel({ conversation, onCreateJob }: { conversation: Conv
             ))}
           </Flex>
         </div>
+
+        {(data?.conversations.length ?? 0) > 1 && (
+          <div>
+            <SectionTitle>ประวัติแชต</SectionTitle>
+            <Flex vertical gap={4}>
+              {data?.conversations.map((h) => (
+                <Link
+                  key={h.id}
+                  href={`/inbox/${h.id}`}
+                  style={{
+                    display: 'block',
+                    padding: '6px 10px',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    color: 'inherit',
+                    background: h.id === conversation.id ? 'var(--brand-soft)' : undefined,
+                  }}
+                >
+                  <Flex align="center" justify="space-between" gap={6}>
+                    <ConversationStatusTag status={h.status} />
+                    {h.csatRating != null && (
+                      <Typography.Text style={{ fontSize: 12, color: '#ca8a04' }}>
+                        <StarFilled /> {h.csatRating}
+                      </Typography.Text>
+                    )}
+                    <Typography.Text type="secondary" style={{ fontSize: 12, marginInlineStart: 'auto' }}>
+                      {fmtRelative(h.createdAt)}
+                    </Typography.Text>
+                  </Flex>
+                  <Typography.Text type="secondary" ellipsis style={{ display: 'block', fontSize: 12 }}>
+                    {h.lastMessageText}
+                  </Typography.Text>
+                </Link>
+              ))}
+            </Flex>
+          </div>
+        )}
 
         {assignee && (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>

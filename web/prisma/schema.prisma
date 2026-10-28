@@ -78,6 +78,7 @@ model User {
   jobs         Job[]
   /// LINE OAs an agent may see; admins see every OA regardless
   channels     LineChannel[]
+  auditLogs    AuditLog[]
 }
 
 /// A LINE Official Account (Messaging API channel). Categories and integrations are shared across OAs.
@@ -95,11 +96,14 @@ model LineChannel {
   handoffText   String?
   /// When false, new chats skip the bot and go straight to the agent queue
   botEnabled    Boolean        @default(true)
+  /// Push a 1–5 satisfaction card to the customer when an agent resolves a chat
+  csatEnabled   Boolean        @default(false)
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())
   contacts      Contact[]
   conversations Conversation[]
   agents        User[]
+  cannedReplies CannedReply[]
 }
 
 model Contact {
@@ -119,6 +123,7 @@ model Contact {
   jobs          Job[]
 
   @@unique([channelId, lineUserId])
+  @@index([tags], type: Gin)
 }
 
 model Conversation {
@@ -143,11 +148,23 @@ model Conversation {
   queuedAt        DateTime?
   firstResponseAt DateTime?
   resolvedAt      DateTime?
+  /// When the chat last entered the queue (cleared on assign): the queue-wait SLA clock
+  waitingSince    DateTime?
+  /// Set once an SLA alert went out for the current wait; cleared by handoff/assign/transfer/reopen
+  slaAlertedAt    DateTime?
+  /// Plain user ids (no relation) for per-agent reports
+  firstResponderId String?
+  resolvedById    String?
+  /// Customer satisfaction 1–5 (see LineChannel.csatEnabled)
+  csatRating      Int?
+  csatSentAt      DateTime?
+  csatRatedAt     DateTime?
   createdAt       DateTime           @default(now())
   messages        Message[]
   jobs            Job[]
 
   @@index([status, lastMessageAt])
+  @@index([status, slaAlertedAt])
   @@index([channelId, status, lastMessageAt])
   @@index([contactId])
 }
@@ -263,10 +280,48 @@ model QueueTask {
   updatedAt   DateTime   @updatedAt
 
   @@index([queue, status, runAt])
+  @@index([status, updatedAt])
 }
 
 model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+/// Agent quick replies, picked in the composer by typing `/shortcut`. Placeholders: {name} {agent} {oa} {phone}
+model CannedReply {
+  id        String       @id @default(uuid())
+  /// Lowercase; unique within its scope (one OA, or every OA)
+  shortcut  String
+  title     String?
+  text      String
+  /// null = every OA
+  channelId String?
+  channel   LineChannel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([channelId, shortcut])
+}
+
+/// Who did what: admin changes and key conversation actions
+model AuditLog {
+  id         String   @id @default(uuid())
+  /// null = the system (e.g. auto-assign)
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// e.g. conversation.transfer, user.update, queue.retry
+  action     String
+  entityType String
+  entityId   String?
+  data       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
 }

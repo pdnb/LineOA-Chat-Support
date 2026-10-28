@@ -11,6 +11,7 @@ import { parse } from 'url';
 import { ensureAdmin } from './src/server/bootstrap';
 import { env } from './src/server/env';
 import { importEnvCredentials } from './src/server/line/channels';
+import { stopMaintenance } from './src/server/maintenance';
 import { attachSocket } from './src/server/socket';
 import { stopPolling } from './src/server/queue';
 import { startWorker } from './src/server/worker';
@@ -40,6 +41,7 @@ async function main() {
 
   const shutdown = () => {
     stopPolling();
+    stopMaintenance();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   };

@@ -1,6 +1,6 @@
 'use client';
 
-import { InboxOutlined, SearchOutlined } from '@ant-design/icons';
+import { InboxOutlined, SearchOutlined, TagOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Empty, Flex, Input, Select, Spin, Typography } from 'antd';
 import Link from 'next/link';
@@ -12,6 +12,7 @@ import { Conversation } from '@/lib/types';
 import styles from '../chat.module.css';
 import { ChannelTag, ConversationStatusTag, ToneTag } from '../StatusTag';
 import { UserAvatar } from '../UserAvatar';
+import { SlaTimer, useSlaConfig } from './SlaTimer';
 
 type View = 'queue' | 'mine' | 'bot' | 'all' | 'resolved';
 const VIEWS: { key: View; label: string }[] = [
@@ -23,22 +24,33 @@ const VIEWS: { key: View; label: string }[] = [
 ];
 const VIEW_KEY = 'cc.inboxView';
 const CHANNEL_KEY = 'cc.inboxChannel';
+const TAG_KEY = 'cc.inboxTag';
 const ALL = '';
 
 export function ConversationList({ selectedId }: { selectedId?: string }) {
   const [view, setView] = useState<View>('queue');
   const [q, setQ] = useState('');
   const [channelId, setChannelId] = useState(ALL);
+  const [tag, setTag] = useState(ALL);
   const { channels, multi } = useLineChannels();
+  const sla = useSlaConfig();
   // A remembered OA the user no longer has access to falls back to "all".
   const channel = channels.some((ch) => ch.id === channelId) ? channelId : ALL;
   const counts = useQuery({
     queryKey: ['counts', channel],
     queryFn: () => api<Record<string, number>>(`/api/conversations/counts?channelId=${channel}`),
   });
+  const tags = useQuery({
+    queryKey: ['contact-tags', channel],
+    queryFn: () => api<string[]>(`/api/contacts/tags?channelId=${channel}`),
+    staleTime: 60_000,
+  });
   const list = useQuery({
-    queryKey: ['conversations', view, q, channel],
-    queryFn: () => api<Conversation[]>(`/api/conversations?view=${view}&q=${encodeURIComponent(q)}&channelId=${channel}`),
+    queryKey: ['conversations', view, q, channel, tag],
+    queryFn: () =>
+      api<Conversation[]>(
+        `/api/conversations?view=${view}&q=${encodeURIComponent(q)}&channelId=${channel}&tag=${encodeURIComponent(tag)}`,
+      ),
   });
 
   // Read the remembered tab and OA after hydration so server and client render the same markup.
@@ -47,6 +59,7 @@ export function ConversationList({ selectedId }: { selectedId?: string }) {
       const saved = localStorage.getItem(VIEW_KEY) as View | null;
       if (saved && VIEWS.some((v) => v.key === saved)) setView(saved);
       setChannelId(localStorage.getItem(CHANNEL_KEY) ?? ALL);
+      setTag(localStorage.getItem(TAG_KEY) ?? ALL);
     } catch {
       // storage unavailable
     }
@@ -56,6 +69,15 @@ export function ConversationList({ selectedId }: { selectedId?: string }) {
     setChannelId(id);
     try {
       localStorage.setItem(CHANNEL_KEY, id);
+    } catch {
+      // ignore
+    }
+  }
+
+  function changeTag(t: string | undefined) {
+    setTag(t ?? ALL);
+    try {
+      localStorage.setItem(TAG_KEY, t ?? ALL);
     } catch {
       // ignore
     }
@@ -95,6 +117,23 @@ export function ConversationList({ selectedId }: { selectedId?: string }) {
             ]}
           />
         )}
+        {(tags.data?.length || tag) ? (
+          <Select
+            size="small"
+            allowClear
+            showSearch
+            value={tag || undefined}
+            onChange={changeTag}
+            placeholder={
+              <>
+                <TagOutlined /> กรองตามแท็ก
+              </>
+            }
+            aria-label="แท็ก"
+            style={{ width: '100%', marginTop: 8 }}
+            options={[...new Set([...(tags.data ?? []), ...(tag ? [tag] : [])])].map((t) => ({ value: t, label: t }))}
+          />
+        ) : null}
         <div role="tablist" aria-label="มุมมองแชต" className={styles.tabs}>
           {VIEWS.map((v) => {
             const n = counts.data?.[v.key] ?? 0;
@@ -150,6 +189,7 @@ export function ConversationList({ selectedId }: { selectedId?: string }) {
                 <ConversationStatusTag status={c.status} />
                 {multi && <ChannelTag>{c.channel.name}</ChannelTag>}
                 {c.category && <ToneTag>{c.category.name}</ToneTag>}
+                <SlaTimer conv={c} cfg={sla} />
                 {c.assignedTo && (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     · {c.assignedTo.name}

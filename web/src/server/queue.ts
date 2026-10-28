@@ -1,5 +1,5 @@
 import { Prisma, TaskStatus } from '@prisma/client';
-import { prisma } from './db';
+import { prisma, utcNow } from './db';
 import { env } from './env';
 import { conflict, notFound } from './http';
 import { emitToAdmins } from './realtime';
@@ -147,10 +147,10 @@ async function processNext(): Promise<boolean> {
 
   const rows = await prisma.$queryRaw<ClaimedTask[]>`
     UPDATE "QueueTask"
-    SET status = 'RUNNING', "lockedAt" = now(), attempts = attempts + 1, "updatedAt" = now()
+    SET status = 'RUNNING', "lockedAt" = ${utcNow}, attempts = attempts + 1, "updatedAt" = ${utcNow}
     WHERE id = (
       SELECT id FROM "QueueTask"
-      WHERE status = 'PENDING' AND "runAt" <= now() AND queue = ANY(${queues})
+      WHERE status = 'PENDING' AND "runAt" <= ${utcNow} AND queue = ANY(${queues})
       ORDER BY "runAt", "createdAt"
       LIMIT 1
       FOR UPDATE SKIP LOCKED

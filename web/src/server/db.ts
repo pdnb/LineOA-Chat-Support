@@ -12,3 +12,6 @@ export const prisma: PrismaClient = (g.__prisma ??= new PrismaClient());
  * whose time zone isn't UTC (e.g. Asia/Bangkok) comparisons and writes would be off by hours.
  */
 export const utc = (d: Date) => Prisma.sql`(${d}::timestamptz AT TIME ZONE 'UTC')`;
+
+/** The current time in the same form (use instead of a bare `now()` next to those columns). */
+export const utcNow = Prisma.sql`(now() AT TIME ZONE 'UTC')`;

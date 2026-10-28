@@ -884,6 +884,13 @@ describe('Hotline flow (e2e)', () => {
       expect(forbidden.status).toBe(403);
     });
 
+    it('waits for a delayed queue task, whatever the database session’s time zone is', async () => {
+      const task = await m.queue.enqueue('line-push', { contactId: 'nobody', messages: [] }, { delayMs: 60_000 });
+      await m.queue.drain();
+      expect(await prisma.queueTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'PENDING', attempts: 0 });
+      await prisma.queueTask.delete({ where: { id: task.id } });
+    });
+
     it('lets admins inspect, retry, delete and purge queue tasks, with an audit trail', async () => {
       expect((await call(m.routes.queueTasks.GET, '/api/queue-tasks?status=FAILED', { headers: auth })).status).toBe(403);
       const failed = await call(m.routes.queueTasks.GET, '/api/queue-tasks?status=FAILED', { headers: admin });

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { prisma, utc } from './db';
+import { prisma, utc, utcNow } from './db';
 
 /** The report period: 1–365 days back from now (30 by default). */
 export function reportWindow(daysParam?: string | null) {
@@ -44,7 +44,7 @@ export async function reportSummary(daysParam?: string | null, channelIds: strin
       SELECT to_char(d, 'YYYY-MM-DD') AS day,
         (SELECT count(*) FROM "Conversation" cv WHERE cv."createdAt"::date = d ${convIn('cv')})::bigint AS conversations,
         (SELECT count(*) FROM "Job" j WHERE j."createdAt"::date = d ${jobIn('j')})::bigint AS jobs
-      FROM generate_series(${since}::date, now()::date, interval '1 day') d
+      FROM generate_series(${utc(since)}::date, ${utcNow}::date, interval '1 day') d
       ORDER BY d`,
     prisma.$queryRaw<{ rating: number; count: bigint }[]>`
       SELECT "csatRating" AS rating, count(*)::bigint AS count FROM "Conversation" cv

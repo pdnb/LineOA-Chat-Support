@@ -1,6 +1,7 @@
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { audit } from '@/server/audit';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { parseBody, route } from '@/server/http';
@@ -26,7 +27,7 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  await requireUser(req, 'ADMIN');
+  const admin = await requireUser(req, 'ADMIN');
   const dto = await parseBody(req, CreateUserBody);
   const user = await prisma.user.create({
     data: {
@@ -38,5 +39,6 @@ export const POST = route(async (req) => {
     },
     select: USER_SELECT,
   });
+  await audit(admin, 'user.create', { type: 'user', id: user.id }, dto);
   return toUserDto(user);
 });

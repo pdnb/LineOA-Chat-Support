@@ -6,5 +6,5 @@ import { route } from '@/server/http';
 export const POST = route<{ id: string }>(async (req, { id }) => {
   const user = await requireUser(req);
   await assertConversationAccess(user, id);
-  return handoff(id, `${user.name} ส่งเรื่องกลับเข้าคิว`);
+  return handoff(id, `${user.name} ส่งเรื่องกลับเข้าคิว`, user);
 });

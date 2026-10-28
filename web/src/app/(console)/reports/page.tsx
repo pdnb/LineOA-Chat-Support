@@ -1,10 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { Card, Col, Empty, Flex, Progress, Row, Select, Spin, Statistic, Tooltip, Typography } from 'antd';
+import { DownloadOutlined, StarFilled } from '@ant-design/icons';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { App, Button, Card, Col, Dropdown, Empty, Flex, Progress, Row, Select, Spin, Statistic, Table, Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import { PageBody, PageHeader } from '@/components/PageHeader';
-import { api } from '@/lib/api';
+import { ToneTag } from '@/components/StatusTag';
+import { api, download } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { CONVERSATION_STATUS, fmtDuration, JOB_STATUS } from '@/lib/format';
 import { ConversationStatus, JobStatus } from '@/lib/types';
 
@@ -16,6 +19,20 @@ interface Summary {
   avgFirstResponseSeconds: number | null;
   handledConversations: number;
   daily: { day: string; conversations: number; jobs: number }[];
+  csat: { avg: number | null; rated: number; sent: number; distribution: Record<string, number> };
+}
+
+interface AgentRow {
+  userId: string;
+  name: string;
+  isActive: boolean;
+  handled: number;
+  messagesSent: number;
+  resolved: number;
+  avgFirstResponseSeconds: number | null;
+  avgResolutionSeconds: number | null;
+  csatAvg: number | null;
+  csatCount: number;
 }
 
 const sum = (o: Record<string, number | undefined>) => Object.values(o).reduce<number>((a, b) => a + (b ?? 0), 0);
@@ -57,6 +74,17 @@ function Bars({ rows }: { rows: { label: string; value: number }[] }) {
 
 export default function ReportsPage() {
   const [days, setDays] = useState(30);
+  const { user } = useAuth();
+  const { message } = App.useApp();
+  const isAdmin = user?.role === 'ADMIN';
+  const agents = useQuery({
+    queryKey: ['report-agents', days],
+    queryFn: () => api<{ agents: AgentRow[] }>(`/api/reports/agents?days=${days}`),
+  });
+  const exportCsv = useMutation({
+    mutationFn: (type: string) => download(`/api/reports/export?type=${type}&days=${days}`, `${type}.csv`),
+    onError: (err) => message.error(err instanceof Error ? err.message : 'ดาวน์โหลดไม่สำเร็จ'),
+  });
   const { data, isLoading } = useQuery({
     queryKey: ['report', days],
     queryFn: () => api<Summary>(`/api/reports/summary?days=${days}`),
@@ -76,6 +104,23 @@ export default function ReportsPage() {
             { value: 90, label: '90 วันล่าสุด' },
           ]}
         />
+        {isAdmin && (
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              onClick: ({ key }) => exportCsv.mutate(key),
+              items: [
+                { key: 'conversations', label: 'แชต (CSV)' },
+                { key: 'jobs', label: 'งาน (CSV)' },
+                { key: 'agents', label: 'ประสิทธิภาพเจ้าหน้าที่ (CSV)' },
+              ],
+            }}
+          >
+            <Button icon={<DownloadOutlined />} loading={exportCsv.isPending}>
+              Export CSV
+            </Button>
+          </Dropdown>
+        )}
       </PageHeader>
       <PageBody>
         {isLoading && (
@@ -100,7 +145,15 @@ export default function ReportsPage() {
                 />
               </Col>
               <Col xs={24} sm={12} lg={6}>
-                <Stat label="ส่งงานไม่สำเร็จ" value={data.jobsByStatus.FAILED ?? 0} />
+                <Stat
+                  label="ความพึงพอใจเฉลี่ย"
+                  value={data.csat.avg == null ? '-' : `${data.csat.avg.toFixed(2)} / 5`}
+                  sub={
+                    data.csat.sent
+                      ? `ตอบ ${data.csat.rated} จาก ${data.csat.sent} แบบประเมิน · ส่งงานไม่สำเร็จ ${data.jobsByStatus.FAILED ?? 0}`
+                      : `ส่งงานไม่สำเร็จ ${data.jobsByStatus.FAILED ?? 0}`
+                  }
+                />
               </Col>
             </Row>
 
@@ -158,6 +211,66 @@ export default function ReportsPage() {
                       value: data.conversationsByStatus[s] ?? 0,
                     }))}
                   />
+                </Card>
+              </Col>
+            </Row>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} lg={16}>
+                <Card title={isAdmin ? 'ประสิทธิภาพรายเจ้าหน้าที่' : 'ผลงานของฉัน'} style={{ height: '100%' }}>
+                  <Table<AgentRow>
+                    rowKey="userId"
+                    size="small"
+                    loading={agents.isLoading}
+                    dataSource={agents.data?.agents}
+                    pagination={false}
+                    scroll={{ x: 640 }}
+                    columns={[
+                      {
+                        title: 'เจ้าหน้าที่',
+                        render: (_, a) => (
+                          <>
+                            {a.name} {!a.isActive && <ToneTag tone="red">ปิดใช้งาน</ToneTag>}
+                          </>
+                        ),
+                      },
+                      { title: 'แชตที่ดูแล', dataIndex: 'handled', align: 'right', sorter: (a, b) => a.handled - b.handled },
+                      { title: 'ปิดเรื่อง', dataIndex: 'resolved', align: 'right', sorter: (a, b) => a.resolved - b.resolved },
+                      {
+                        title: 'ตอบครั้งแรกเฉลี่ย',
+                        dataIndex: 'avgFirstResponseSeconds',
+                        align: 'right',
+                        render: fmtDuration,
+                        sorter: (a, b) => (a.avgFirstResponseSeconds ?? Infinity) - (b.avgFirstResponseSeconds ?? Infinity),
+                      },
+                      {
+                        title: 'เวลาจนปิดเรื่องเฉลี่ย',
+                        dataIndex: 'avgResolutionSeconds',
+                        align: 'right',
+                        render: fmtDuration,
+                        sorter: (a, b) => (a.avgResolutionSeconds ?? Infinity) - (b.avgResolutionSeconds ?? Infinity),
+                      },
+                      {
+                        title: 'ความพึงพอใจ',
+                        align: 'right',
+                        render: (_, a) =>
+                          a.csatAvg == null ? '-' : (
+                            <Tooltip title={`จาก ${a.csatCount} คะแนน`}>
+                              <StarFilled style={{ color: '#ca8a04' }} /> {a.csatAvg.toFixed(2)}
+                            </Tooltip>
+                          ),
+                        sorter: (a, b) => (a.csatAvg ?? 0) - (b.csatAvg ?? 0),
+                      },
+                    ]}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} lg={8}>
+                <Card title="คะแนนความพึงพอใจ" style={{ height: '100%' }}>
+                  {data.csat.rated ? (
+                    <Bars rows={[5, 4, 3, 2, 1].map((r) => ({ label: `${'★'.repeat(r)}`, value: data.csat.distribution[r] ?? 0 }))} />
+                  ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="ยังไม่มีคะแนน — เปิดได้ที่หน้าบัญชี LINE OA" />
+                  )}
                 </Card>
               </Col>
             </Row>

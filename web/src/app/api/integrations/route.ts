@@ -1,3 +1,4 @@
+import { audit } from '@/server/audit';
 import { requireUser } from '@/server/auth';
 import { prisma } from '@/server/db';
 import { parseBody, route } from '@/server/http';
@@ -11,7 +12,9 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  await requireUser(req, 'ADMIN');
+  const user = await requireUser(req, 'ADMIN');
   const dto = await parseBody(req, IntegrationBody);
-  return prisma.integration.create({ data: { ...dto, secret: dto.secret ?? newSecret() } });
+  const integration = await prisma.integration.create({ data: { ...dto, secret: dto.secret ?? newSecret() } });
+  await audit(user, 'integration.create', { type: 'integration', id: integration.id }, dto);
+  return integration;
 });

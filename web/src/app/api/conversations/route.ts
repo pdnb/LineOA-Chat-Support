@@ -7,5 +7,5 @@ export const GET = route(async (req) => {
   const params = searchParams(req);
   const view = (params.get('view') || 'all') as ConversationView;
   if (!CONVERSATION_VIEWS.includes(view)) throw badRequest('Unknown view');
-  return list(view, user, params.get('q')?.trim() || undefined, params.get('channelId'));
+  return list(view, user, params.get('q')?.trim() || undefined, params.get('channelId'), params.get('tag')?.trim() || null);
 });

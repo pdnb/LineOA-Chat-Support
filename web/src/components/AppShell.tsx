@@ -2,24 +2,27 @@
 
 import {
   ApiOutlined,
+  AuditOutlined,
   BarChartOutlined,
   CommentOutlined,
+  DatabaseOutlined,
   LogoutOutlined,
   MessageOutlined,
   SettingOutlined,
   SolutionOutlined,
   TagsOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, Flex, Grid, Layout, Menu, MenuProps, Tooltip, Typography } from 'antd';
+import { App, Badge, Button, Flex, Grid, Layout, Menu, MenuProps, Tooltip, Typography } from 'antd';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { setDesktopUnread } from '@/lib/desktop';
-import { useRealtime } from '@/lib/realtime';
+import { RealtimeAlert, useRealtime } from '@/lib/realtime';
 import { Logo } from './Logo';
 import { UserAvatar } from './UserAvatar';
 
@@ -31,9 +34,21 @@ const SIDER_WIDTH = 232;
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
+  const { notification } = App.useApp();
   const screens = Grid.useBreakpoint();
   const [collapsed, setCollapsed] = useState(false);
-  const { online, connected } = useRealtime(!!user);
+  const onAlert = (a: RealtimeAlert) => {
+    const open = () => {
+      if (a.conversationId) router.push(`/inbox/${a.conversationId}`);
+      else if (a.kind === 'queue') router.push('/admin/queue');
+    };
+    const notice = { title: a.title, description: a.body, onClick: open, style: { cursor: 'pointer' }, duration: 8 };
+    if (a.kind === 'queue') notification.error(notice);
+    else if (a.kind === 'sla') notification.warning(notice);
+    else notification.info(notice);
+  };
+  const { online, connected } = useRealtime(!!user, onAlert);
   const counts = useQuery({
     queryKey: ['counts'],
     queryFn: () => api<{ queue: number; mine: number }>('/api/conversations/counts'),
@@ -46,6 +61,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Logging out unmounts the shell: clear the taskbar badge.
   useEffect(() => () => setDesktopUnread(0), []);
   const isAdmin = user?.role === 'ADMIN';
+  const failedTasks = useQuery({
+    queryKey: ['queue-tasks', 'failed-count'],
+    queryFn: () => api<{ total: number }>('/api/queue-tasks?status=FAILED&take=1'),
+    enabled: isAdmin,
+    refetchInterval: 60_000,
+  });
   const mobile = screens.md === false;
 
   const link = (href: string, label: ReactNode) => (
@@ -77,15 +98,27 @@ export function AppShell({ children }: { children: ReactNode }) {
               { key: '/admin/categories', icon: <TagsOutlined />, label: link('/admin/categories', 'หมวดเรื่อง & Bot') },
               { key: '/admin/integrations', icon: <ApiOutlined />, label: link('/admin/integrations', 'ระบบปลายทาง') },
               { key: '/admin/users', icon: <TeamOutlined />, label: link('/admin/users', 'เจ้าหน้าที่') },
-              { key: '/admin/settings', icon: <SettingOutlined />, label: link('/admin/settings', 'ตั้งค่าข้อความ') },
+              { key: '/admin/canned-replies', icon: <ThunderboltOutlined />, label: link('/admin/canned-replies', 'ข้อความสำเร็จรูป') },
+              { key: '/admin/settings', icon: <SettingOutlined />, label: link('/admin/settings', 'ตั้งค่าข้อความ & SLA') },
+              {
+                key: '/admin/queue',
+                icon: <DatabaseOutlined />,
+                label: link(
+                  '/admin/queue',
+                  <Flex justify="space-between" align="center">
+                    งานค้างในคิว
+                    <Badge count={failedTasks.data?.total} size="small" />
+                  </Flex>,
+                ),
+              },
+              { key: '/admin/audit-log', icon: <AuditOutlined />, label: link('/admin/audit-log', 'บันทึกการใช้งาน') },
             ],
           },
         ] satisfies MenuProps['items'])
       : []),
   ];
-  const selected = ['/inbox', '/jobs', '/reports', '/admin/line-channels', '/admin/categories', '/admin/integrations', '/admin/users', '/admin/settings'].find(
-    (k) => pathname === k || pathname.startsWith(k + '/'),
-  );
+  const keys = items.flatMap((i) => (i && 'children' in i && i.children ? i.children : [i])).map((i) => String(i?.key));
+  const selected = keys.find((k) => pathname === k || pathname.startsWith(k + '/'));
 
   return (
     <PresenceContext.Provider value={online}>

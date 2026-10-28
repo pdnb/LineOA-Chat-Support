@@ -1,3 +1,4 @@
+import { audit } from '@/server/audit';
 import { requireUser } from '@/server/auth';
 import { CategoryBody } from '@/server/categories';
 import { prisma } from '@/server/db';
@@ -12,6 +13,9 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  await requireUser(req, 'ADMIN');
-  return prisma.category.create({ data: await parseBody(req, CategoryBody) });
+  const user = await requireUser(req, 'ADMIN');
+  const dto = await parseBody(req, CategoryBody);
+  const category = await prisma.category.create({ data: dto });
+  await audit(user, 'category.create', { type: 'category', id: category.id }, dto);
+  return category;
 });

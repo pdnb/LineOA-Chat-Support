@@ -3,6 +3,7 @@ import { BotInput, isTrackInput } from '../bot/engine';
 import { handleBot } from '../bot/service';
 import * as conversations from '../conversations';
 import { InboundMessage } from '../conversations';
+import { parseCsatPostback, recordCsat } from '../csat';
 import { prisma } from '../db';
 import { extFor, saveMedia } from '../media';
 import { DEFAULT_CHANNEL_ID } from './channels';
@@ -71,6 +72,9 @@ export async function processLineEvent(task: LineEventTask) {
   }
 
   if (event.type === 'postback' && event.postback) {
+    // A rating belongs to the (usually resolved) chat it was sent for: it must not open a new chat.
+    const csat = parseCsatPostback(event.postback.data);
+    if (csat) return recordCsat(channelId, userId, csat, event.replyToken);
     const conv = await conversations.getOrOpen(contact);
     const input: BotInput = { kind: 'postback', data: event.postback.data };
     await respond(conv, contact, input, botEnabled, event.replyToken);

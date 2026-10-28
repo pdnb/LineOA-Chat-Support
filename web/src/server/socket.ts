@@ -2,7 +2,7 @@ import type { Server as HttpServer } from 'http';
 import { Server } from 'socket.io';
 import { verifyToken } from './auth';
 import { prisma } from './db';
-import { emitPresence, realtime, roomsFor } from './realtime';
+import { emitPresence, realtime, roomsFor, userRoom } from './realtime';
 
 /** Realtime channel to the agent console, attached to the custom server's HTTP server. */
 export function attachSocket(httpServer: HttpServer) {
@@ -19,7 +19,7 @@ export function attachSocket(httpServer: HttpServer) {
       return;
     }
     client.data.userId = userId;
-    await client.join(['agents', ...(await roomsFor(userId))]);
+    await client.join(['agents', userRoom(userId), ...(await roomsFor(userId))]);
     realtime.online.set(userId, (realtime.online.get(userId) ?? 0) + 1);
     await prisma.user.update({ where: { id: userId }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
     emitPresence();

@@ -29,9 +29,16 @@ function Body({ m }: { m: Message }) {
       return p.url ? <audio src={p.url} controls /> : <span>[เสียง]</span>;
     case 'file':
       return (
-        <a href={p.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>
-          <FileTextOutlined /> {p.fileName ?? 'ไฟล์แนบ'}
-        </a>
+        <>
+          <a href={p.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>
+            <FileTextOutlined /> {p.fileName ?? m.text ?? 'ไฟล์แนบ'}
+          </a>
+          {p.sentAs === 'link' && (
+            <div style={{ fontSize: 11, opacity: 0.7 }}>
+              {typeof p.size === 'number' && `${Math.max(1, Math.round(p.size / 1024))} KB · `}ส่งให้ลูกค้าเป็นลิงก์
+            </div>
+          )}
+        </>
       );
     case 'location':
       return (
@@ -47,7 +54,7 @@ function Body({ m }: { m: Message }) {
     case 'flex':
       return (
         <div className={styles.flexCard}>
-          <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>การ์ดแจ้งสถานะ</div>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>การ์ด</div>
           {m.text}
         </div>
       );

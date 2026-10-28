@@ -13,8 +13,7 @@ COPY web/package.json web/
 COPY tools/mock-receiver/package.json tools/mock-receiver/
 RUN npm ci --no-audit --no-fund
 COPY web web
-RUN npx -w web prisma generate \
-  && npm run build \
+RUN npm run build \
   && npm prune --omit=dev --no-audit --no-fund
 
 FROM base AS runtime

@@ -25,6 +25,11 @@ export function desktopNotify(title: string, body: string, conversationId: strin
   invoke('notify', { title, body, conversationId });
 }
 
+/** Opens `url` in the default browser: the app sends every new-window request there. */
+export function openExternal(url: string) {
+  window.open(new URL(url, window.location.href).toString(), '_blank');
+}
+
 /** Queue count shown on the taskbar icon and the tray. */
 export function setDesktopUnread(count: number) {
   invoke('set_unread', { count });

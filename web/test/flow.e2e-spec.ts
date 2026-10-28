@@ -58,6 +58,8 @@ const load = async () => ({
     providers: await import('@/app/api/auth/providers/route'),
     auth0Login: await import('@/app/api/auth/auth0/login/route'),
     auth0Callback: await import('@/app/api/auth/auth0/callback/route'),
+    auth0Desktop: await import('@/app/api/auth/auth0/desktop/route'),
+    auth0DesktopClaim: await import('@/app/api/auth/auth0/desktop/claim/route'),
     users: await import('@/app/api/users/route'),
     conversations: await import('@/app/api/conversations/route'),
     conversation: await import('@/app/api/conversations/[id]/route'),
@@ -631,6 +633,42 @@ describe('Hotline flow (e2e)', () => {
         expect(callback.status).toBe(302);
         expect(callback.headers.get('location')).toBe('https://cc.example.test/login?error=auth0_failed');
         expect(callback.headers.get('set-cookie')).toMatch(/Max-Age=0/);
+      });
+    });
+
+    it('hands a browser login back to the desktop app once, only with the secret', async () => {
+      const claim = (body: unknown) => call(m.routes.auth0DesktopClaim.POST, '/api/auth/auth0/desktop/claim', { method: 'POST', body });
+      expect((await call(m.routes.auth0Desktop.POST, '/api/auth/auth0/desktop', { method: 'POST' })).status).toBe(404);
+
+      await withAuth0(async () => {
+        const start = await call(m.routes.auth0Desktop.POST, '/api/auth/auth0/desktop', { method: 'POST' });
+        expect(start.status).toBe(201);
+        const { id, secret } = start.body as { id: string; secret: string };
+        expect((await claim({ id, secret })).status).toBe(202);
+        expect((await claim({ id, secret: 'wrong' })).status).toBe(404);
+        expect((await claim({ id: 'unknown', secret })).status).toBe(404);
+
+        // Only a pending handoff id is carried through the Auth0 flow cookie.
+        const login = (q: string) => m.routes.auth0Login.GET(new Request(`http://test.local/api/auth/auth0/login${q}`), { params: Promise.resolve({}) });
+        const flowOf = (res: Response) => JSON.parse(decodeURIComponent(res.headers.get('set-cookie')!.split(';')[0].split('=')[1]));
+        expect(flowOf(await login('?desktop=unknown')).desktop).toBeUndefined();
+        const started = await login(`?desktop=${id}`);
+        expect(flowOf(started).desktop).toBe(id);
+
+        // The browser only learns the outcome; the app claims it once.
+        const callback = await m.routes.auth0Callback.GET(
+          new Request('http://test.local/api/auth/auth0/callback?code=abc&state=forged', {
+            headers: { cookie: started.headers.get('set-cookie')!.split(';')[0] },
+          }),
+        );
+        expect(callback.headers.get('location')).toBe('https://cc.example.test/login?desktop=done&error=auth0_failed');
+        expect(await claim({ id, secret })).toEqual({ status: 200, body: { error: 'auth0_failed' } });
+        expect((await claim({ id, secret })).status).toBe(404);
+
+        const next = m.auth0.startDesktopHandoff();
+        m.auth0.completeDesktopHandoff(next.id, { token: 'app-token' });
+        expect(m.auth0.isPendingHandoff(next.id)).toBe(false);
+        expect(await claim(next)).toEqual({ status: 200, body: { token: 'app-token' } });
       });
     });
   });

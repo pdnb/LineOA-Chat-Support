@@ -2,6 +2,7 @@
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { api, getToken, isSsoSession, setToken } from './api';
+import { isDesktop } from './desktop';
 import { User } from './types';
 
 interface AuthState {
@@ -48,7 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    const sso = isSsoSession();
+    // The desktop app's Auth0 session lives in the default browser; signing out only leaves the app.
+    const sso = isSsoSession() && !isDesktop();
     setToken(null);
     setUser(null);
     if (sso) window.location.assign('/api/auth/auth0/logout');

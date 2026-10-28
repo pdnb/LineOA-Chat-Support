@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { Role } from '@prisma/client';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { prisma } from './db';
@@ -17,6 +17,8 @@ export interface Auth0Flow {
   state: string;
   nonce: string;
   verifier: string;
+  /** Desktop handoff id when the login was started from the desktop app (see startDesktopHandoff). */
+  desktop?: string;
 }
 
 export interface Auth0Claims {
@@ -115,4 +117,61 @@ export async function resolveAuth0User(claims: Auth0Claims): Promise<Auth0Result
   if (!byEmail || !byEmail.isActive || byEmail.auth0Sub) return { error: 'not_registered' };
   const user = await prisma.user.update({ where: { id: byEmail.id }, data: { auth0Sub: claims.sub } });
   return { user };
+}
+
+/*
+ * Desktop handoff. The desktop app opens the Auth0 login in the default browser, so the callback can't
+ * hand the token back in a redirect. Instead the app starts a handoff (id + secret), puts only the id in
+ * the browser URL, and polls with the secret until the callback has stored the outcome. One-time, 10 minutes.
+ */
+export type DesktopResult = { token: string } | { error: 'not_registered' | 'email_unverified' | 'auth0_failed' };
+
+interface DesktopHandoff {
+  secretHash: Buffer;
+  expiresAt: number;
+  result: DesktopResult | null;
+}
+
+const HANDOFF_TTL_MS = 10 * 60_000;
+const MAX_HANDOFFS = 1000;
+
+// Shared via globalThis so every route handler bundle sees the same pending logins.
+const g = globalThis as typeof globalThis & { __desktopHandoffs?: Map<string, DesktopHandoff> };
+const handoffs = (g.__desktopHandoffs ??= new Map());
+
+const sha256 = (s: string) => createHash('sha256').update(s).digest();
+
+function live(id: string): DesktopHandoff | undefined {
+  const h = handoffs.get(id);
+  if (!h || h.expiresAt > Date.now()) return h;
+  handoffs.delete(id);
+  return undefined;
+}
+
+export function startDesktopHandoff(): { id: string; secret: string } {
+  const now = Date.now();
+  for (const [id, h] of handoffs) if (h.expiresAt <= now) handoffs.delete(id);
+  // Map keeps insertion order: drop the oldest when an unauthenticated caller floods the endpoint.
+  while (handoffs.size >= MAX_HANDOFFS) handoffs.delete(handoffs.keys().next().value!);
+  const id = randomBytes(32).toString('base64url');
+  const secret = randomBytes(32).toString('base64url');
+  handoffs.set(id, { secretHash: sha256(secret), expiresAt: now + HANDOFF_TTL_MS, result: null });
+  return { id, secret };
+}
+
+export function isPendingHandoff(id: string): boolean {
+  return live(id)?.result === null;
+}
+
+export function completeDesktopHandoff(id: string, result: DesktopResult) {
+  const h = live(id);
+  if (h && h.result === null) h.result = result;
+}
+
+/** `undefined` for an unknown/expired id or a wrong secret, `null` while pending, else the outcome (removed once read). */
+export function claimDesktopHandoff(id: string, secret: string): DesktopResult | null | undefined {
+  const h = live(id);
+  if (!h || !timingSafeEqual(h.secretHash, sha256(secret))) return undefined;
+  if (h.result) handoffs.delete(id);
+  return h.result;
 }

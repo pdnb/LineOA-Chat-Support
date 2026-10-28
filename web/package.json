@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "scripts": {
     "dev": "tsx server.ts --dev",
-    "build": "next build && esbuild server.ts --bundle --platform=node --target=node20 --packages=external --outfile=dist/server.js",
+    "build": "prisma generate && next build && esbuild server.ts --bundle --platform=node --target=node20 --packages=external --outfile=dist/server.js",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "prisma:migrate": "prisma migrate dev",
